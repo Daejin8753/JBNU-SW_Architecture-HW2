@@ -5,6 +5,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+REPO = "https://github.com/Daejin8753/JBNU-SW_Architecture-HW2"
 CAP = HERE / "capture"
 CAP.mkdir(exist_ok=True)
 esc = html.escape
@@ -166,6 +167,10 @@ ol.flow li {{ margin-bottom: 1.6mm; }}
 .src {{ font-size: 7.4pt; line-height: 1.42; }}
 .src .ln {{ color: #94a3b8; user-select: none; margin-right: 3mm; }}
 .pb {{ break-before: page; }}
+a {{ color: #1d4ed8; }}
+.cover .repo {{ margin-top: 14mm; font-size: 11pt; color: #475569; line-height: 1.8; }}
+.cover .repo a {{ font-size: 12pt; font-weight: 700; }}
+.chain {{ background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 4px; padding: 2.5mm 4mm; font-size: 9.8pt; }}
 </style></head><body>
 
 <section class="cover">
@@ -173,13 +178,20 @@ ol.flow li {{ margin-bottom: 1.6mm; }}
 <div class="sub">온라인 경매 시스템 — 브로커 토폴로지 (Python asyncio)</div>
 <table><tr><td>과목</td><td>소프트웨어아키텍처설계</td></tr><tr><td>학번</td><td>202110914</td></tr>
 <tr><td>이름</td><td>김대진</td></tr><tr><td>제출일</td><td>2026년 10월 25일</td></tr></table>
+<div class="repo">전체 자료(소스 코드 · 실행 로그 · 보고서)<br><a href="{REPO}">{REPO}</a></div>
 </section>
 
 <h2>1. 사용한 프롬프트</h2>
-<p>Claude Code(Claude Opus 5.5)에 아래 두 프롬프트를 주어 설계·구현했습니다. 프롬프트 2의 구현은 Claude Code가 띄운 Sonnet 서브에이전트가 맡았고, 결과 코드를 검토해 로그 문구 한 곳을 고쳤습니다.</p>
-<h3>프롬프트 1 — 과제 전달</h3>
+<p>AI 코딩 도구 Claude Code를 두 단계로 사용했습니다.</p>
+<ul>
+<li><b>프롬프트 1 — 제가 직접 한 지시</b>: 과제 설명을 그대로 Claude Code(메인 에이전트, Claude Opus 5.5)에 전달했습니다.</li>
+<li><b>프롬프트 2 — 제 지시를 구체화한 구현 지시</b>: 메인 에이전트가 프롬프트 1을 바탕으로 도메인, 컴포넌트·커넥터·제약조건, 검증 방법을 구체화해 작성했습니다. 이 프롬프트를 구현 담당 서브에이전트(Claude Sonnet)에게 전달해 코드를 만들게 했습니다.</li>
+<li><b>검토</b>: 메인 에이전트가 서브에이전트의 코드를 검토해 로그 문구 한 곳을 고쳤습니다. 이후 실행 결과와 별도 테스트로 동작을 확인하고 이 보고서를 만들었습니다.</li>
+</ul>
+<p class="chain">나 → <b>프롬프트 1</b> → 메인 에이전트(구체화) → <b>프롬프트 2</b> → 서브에이전트(구현) → 메인 에이전트(검토·실행·보고서)</p>
+<h3>프롬프트 1 — 직접 한 지시 (메인 에이전트에 입력)</h3>
 <blockquote>{esc(p1)}</blockquote>
-<h3>프롬프트 2 — 구현 지시</h3>
+<h3>프롬프트 2 — 구체화한 구현 지시 (메인 에이전트가 작성해 서브에이전트에 전달)</h3>
 <pre>{esc(p2)}</pre>
 
 <h2 class="pb">2. 시스템 구성과 전체 동작 흐름</h2>
