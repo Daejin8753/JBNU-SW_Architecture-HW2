@@ -1,0 +1,138 @@
+[     1.6ms] 시스템               | 경매 시스템 시작
+[     1.6ms] 제약검사C1            | BidProducer       속성 6개 검사, 타 컴포넌트 참조 0, 브로커 참조 있음 -> OK
+[     1.6ms] 제약검사C1            | AuctionClock      속성 5개 검사, 타 컴포넌트 참조 0, 브로커 참조 있음 -> OK
+[     1.6ms] 제약검사C1            | BidCapture        속성 6개 검사, 타 컴포넌트 참조 0, 브로커 참조 있음 -> OK
+[     1.7ms] 제약검사C1            | BidTracker        속성 6개 검사, 타 컴포넌트 참조 0, 브로커 참조 있음 -> OK
+[     1.7ms] 제약검사C1            | BidAnalytics      속성 10개 검사, 타 컴포넌트 참조 0, 브로커 참조 있음 -> OK
+[     1.7ms] 제약검사C1            | Notifier          속성 6개 검사, 타 컴포넌트 참조 0, 브로커 참조 있음 -> OK
+[     1.7ms] 제약검사C1            | Settlement        속성 7개 검사, 타 컴포넌트 참조 0, 브로커 참조 있음 -> OK
+[     1.7ms] 제약검사C1            | DeadLetterMonitor 속성 6개 검사, 타 컴포넌트 참조 0, 브로커 참조 있음 -> OK
+[     1.7ms] 제약검사C1            | 검사기 자가검증(A가 B를 참조하게 만든 가짜 객체) -> 위반 탐지 성공
+[     1.7ms] 제약검사C1            | 결과: PASS
+[     2.1ms] BidProducer       | 입찰 26건 발행 완료 (0.344ms, 처리 결과는 기다리지 않음)
+[     2.3ms] BidCapture        | 입찰 기록 영희 317원
+[     2.3ms] BidCapture        | 입찰 기록 영희 294원
+[     2.3ms] BidCapture        | 입찰 기록 지영 215원
+[     2.3ms] BidCapture        | 만료로 폐기 evt-0004 BidPlaced (ttl=0ms)
+[     2.3ms] BidCapture        | 입찰 기록 민수 392원
+[     2.4ms] BidCapture        | 입찰 기록 민수 327원
+[     2.4ms] BidCapture        | 입찰 기록 철수 143원
+[     2.4ms] BidCapture        | 입찰 기록 지영 309원
+[     2.4ms] BidCapture        | 입찰 기록 영희 286원
+[     2.4ms] BidCapture        | 입찰 기록 하준 173원
+[     2.4ms] BidCapture        | 입찰 기록 영희 169원
+[     2.4ms] BidCapture        | 만료로 폐기 evt-0012 BidPlaced (ttl=0ms)
+[     2.4ms] BidCapture        | 입찰 기록 하준 273원
+[     2.4ms] BidCapture        | 입찰 기록 철수 325원
+[     2.4ms] BidCapture        | 입찰 기록 지영 299원
+[     2.5ms] BidCapture        | 입찰 기록 지영 143원
+[     2.5ms] BidCapture        | 입찰 기록 영희 283원
+[     2.5ms] BidCapture        | 입찰 기록 영희 398원
+[     2.5ms] BidCapture        | 입찰 기록 민수 142원
+[     2.5ms] BidCapture        | 입찰 기록 철수 347원
+[     2.5ms] BidCapture        | 만료로 폐기 evt-0021 BidPlaced (ttl=0ms)
+[     2.5ms] BidCapture        | 입찰 기록 지영 122원
+[     2.6ms] BidCapture        | 입찰 기록 하준 131원
+[     2.7ms] BidCapture        | 입찰 기록 민수 151원
+[     2.7ms] BidCapture        | 입찰 기록 철수 116원
+[     2.8ms] BidCapture        | 입찰 기록 지영 231원
+[     2.8ms] BidTracker        | 최고가 갱신 영희 317원 -> HighestBidChanged 발행
+[     2.9ms] BidTracker        | 만료로 폐기 evt-0004 BidPlaced (ttl=0ms)
+[     2.9ms] BidTracker        | 최고가 갱신 민수 392원 -> HighestBidChanged 발행
+[     3.0ms] BidTracker        | 만료로 폐기 evt-0012 BidPlaced (ttl=0ms)
+[     3.0ms] BidTracker        | 최고가 갱신 영희 398원 -> HighestBidChanged 발행
+[     3.1ms] BidTracker        | 만료로 폐기 evt-0021 BidPlaced (ttl=0ms)
+[     3.2ms] Notifier          | 알림 발송: 새 최고가 317원 (영희)
+[     3.2ms] Notifier          | 알림 발송: 새 최고가 392원 (민수)
+[     3.2ms] Notifier          | 알림 발송: 새 최고가 398원 (영희)
+[    33.0ms] BidAnalytics#1    | 통계 갱신 입찰수=1 평균=317.0원
+[    33.1ms] BidAnalytics#2    | 통계 갱신 입찰수=2 평균=305.5원
+[    33.2ms] BidAnalytics#2    | 만료로 폐기 evt-0004 BidPlaced (ttl=0ms)
+[    64.2ms] BidAnalytics#1    | 통계 갱신 입찰수=3 평균=275.3원
+[    64.3ms] BidAnalytics#2    | 통계 갱신 입찰수=4 평균=304.5원
+[    95.4ms] BidAnalytics#1    | 통계 갱신 입찰수=5 평균=309.0원
+[    95.5ms] BidAnalytics#2    | 실패(143원은 13의 배수) -> 재시도 1/3 evt-0007
+[   127.8ms] BidAnalytics#1    | 통계 갱신 입찰수=6 평균=309.0원
+[   143.2ms] BidAnalytics#2    | 실패(143원은 13의 배수) -> 재시도 2/3 evt-0007
+[   158.4ms] BidAnalytics#1    | 실패(286원은 13의 배수) -> 재시도 1/3 evt-0009
+[   189.0ms] BidAnalytics#2    | 실패(143원은 13의 배수) -> 재시도 3/3 evt-0007
+[   204.2ms] BidAnalytics#1    | 실패(286원은 13의 배수) -> 재시도 2/3 evt-0009
+[   234.9ms] BidAnalytics#2    | 재시도 초과 -> deadletter 전송 evt-0007
+[   235.1ms] DeadLetterMonitor | DLQ 수신: BidAnalytics / 143원은 13의 배수
+[   250.5ms] BidAnalytics#1    | 실패(286원은 13의 배수) -> 재시도 3/3 evt-0009
+[   265.7ms] BidAnalytics#2    | 통계 갱신 입찰수=7 평균=289.6원
+[   296.7ms] BidAnalytics#2    | 실패(169원은 13의 배수) -> 재시도 1/3 evt-0011
+[   296.8ms] BidAnalytics#1    | 재시도 초과 -> deadletter 전송 evt-0009
+[   296.9ms] BidAnalytics#1    | 만료로 폐기 evt-0012 BidPlaced (ttl=0ms)
+[   296.9ms] DeadLetterMonitor | DLQ 수신: BidAnalytics / 286원은 13의 배수
+[   328.9ms] BidAnalytics#1    | 실패(273원은 13의 배수) -> 재시도 1/3 evt-0013
+[   344.3ms] BidAnalytics#2    | 실패(169원은 13의 배수) -> 재시도 2/3 evt-0011
+[   374.8ms] BidAnalytics#1    | 실패(273원은 13의 배수) -> 재시도 2/3 evt-0013
+[   390.4ms] BidAnalytics#2    | 실패(169원은 13의 배수) -> 재시도 3/3 evt-0011
+[   421.3ms] BidAnalytics#1    | 실패(273원은 13의 배수) -> 재시도 3/3 evt-0013
+[   437.2ms] BidAnalytics#2    | 재시도 초과 -> deadletter 전송 evt-0011
+[   437.3ms] DeadLetterMonitor | DLQ 수신: BidAnalytics / 169원은 13의 배수
+[   467.9ms] BidAnalytics#2    | 실패(325원은 13의 배수) -> 재시도 1/3 evt-0014
+[   467.9ms] BidAnalytics#1    | 재시도 초과 -> deadletter 전송 evt-0013
+[   468.0ms] DeadLetterMonitor | DLQ 수신: BidAnalytics / 273원은 13의 배수
+[   499.4ms] BidAnalytics#1    | 실패(299원은 13의 배수) -> 재시도 1/3 evt-0015
+[   514.7ms] BidAnalytics#2    | 실패(325원은 13의 배수) -> 재시도 2/3 evt-0014
+[   545.1ms] BidAnalytics#1    | 실패(299원은 13의 배수) -> 재시도 2/3 evt-0015
+[   560.5ms] BidAnalytics#2    | 실패(325원은 13의 배수) -> 재시도 3/3 evt-0014
+[   592.1ms] BidAnalytics#1    | 실패(299원은 13의 배수) -> 재시도 3/3 evt-0015
+[   607.5ms] BidAnalytics#2    | 재시도 초과 -> deadletter 전송 evt-0014
+[   607.7ms] DeadLetterMonitor | DLQ 수신: BidAnalytics / 325원은 13의 배수
+[   639.0ms] BidAnalytics#2    | 실패(143원은 13의 배수) -> 재시도 1/3 evt-0016
+[   639.0ms] BidAnalytics#1    | 재시도 초과 -> deadletter 전송 evt-0015
+[   639.2ms] DeadLetterMonitor | DLQ 수신: BidAnalytics / 299원은 13의 배수
+[   669.7ms] BidAnalytics#1    | 통계 갱신 입찰수=8 평균=288.8원
+[   685.0ms] BidAnalytics#2    | 실패(143원은 13의 배수) -> 재시도 2/3 evt-0016
+[   700.7ms] BidAnalytics#1    | 통계 갱신 입찰수=9 평균=300.9원
+[   731.3ms] BidAnalytics#1    | 통계 갱신 입찰수=10 평균=285.0원
+[   731.3ms] BidAnalytics#2    | 실패(143원은 13의 배수) -> 재시도 3/3 evt-0016
+[   762.4ms] BidAnalytics#1    | 통계 갱신 입찰수=11 평균=290.6원
+[   762.5ms] BidAnalytics#1    | 만료로 폐기 evt-0021 BidPlaced (ttl=0ms)
+[   777.6ms] BidAnalytics#2    | 재시도 초과 -> deadletter 전송 evt-0016
+[   777.8ms] DeadLetterMonitor | DLQ 수신: BidAnalytics / 143원은 13의 배수
+[   793.1ms] BidAnalytics#1    | 통계 갱신 입찰수=12 평균=276.6원
+[   808.6ms] BidAnalytics#2    | 통계 갱신 입찰수=13 평균=265.4원
+[   823.8ms] BidAnalytics#1    | 통계 갱신 입찰수=14 평균=257.2원
+[   839.1ms] BidAnalytics#2    | 통계 갱신 입찰수=15 평균=247.8원
+[   854.8ms] BidAnalytics#1    | 통계 갱신 입찰수=16 평균=246.8원
+[   855.0ms] AuctionClock      | A-100 경매 마감 -> AuctionClosed 발행
+[   855.1ms] Settlement        | 낙찰 확정 영희 398원 -> AuctionSettled 발행
+[   855.2ms] Notifier          | 알림 발송: 낙찰 결과: 영희 님 398원
+[   855.3ms] 제약검사C2            | 입찰 전체 발행 0.344ms vs BidAnalytics 처리 851.7ms (약 2473배) -> 발행자는 처리 완료를 기다리지 않음
+[   855.3ms] 제약검사C3            | 이벤트 type ['AuctionClosed', 'AuctionSettled', 'BidPlaced', 'EventDeadLettered', 'HighestBidChanged', 'NotificationSent'] -> PASS
+[   855.3ms] 제약검사C4            | 발행자는 토픽 이름만 사용, 구독자 목록 미보유 -> PASS
+
+======================================================================
+요약
+======================================================================
+[토픽별 발행 수]
+  bid.placed              26
+  bid.highest_changed      3
+  auction.closed           1
+  auction.settled          1
+  notification.sent        4
+  deadletter               7
+
+[구독별 처리/재시도/DLQ/만료]
+  구독                         처리   재시도  DLQ   만료
+  BidCapture                 23      0    0    3
+  BidTracker                 23      0    0    3
+  BidAnalytics               16     21    7    3
+  Notifier/highest            3      0    0    0
+  Settlement/highest          3      0    0    0
+  Settlement/closed           1      0    0    0
+  Notifier/settled            1      0    0    0
+  DeadLetterMonitor           7      0    0    0
+[BidAnalytics 워커별 성공 처리] {'BidAnalytics#1': 11, 'BidAnalytics#2': 5}
+[낙찰 결과] A-100 낙찰자=영희 낙찰가=398원 (알림 4건 발송)
+[BidTracker 최고가] 398원 / Settlement 보유 398원 -> 일치 True
+
+[제약 검사]
+  C1 직접 참조 없음   : PASS
+  C2 비동기 발행      : 발행 0.344ms < 분석 851.7ms -> PASS
+  C3 과거형 이벤트    : PASS
+  C4 발행자 익명성    : PASS

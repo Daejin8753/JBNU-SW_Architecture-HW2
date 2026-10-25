@@ -1,0 +1,662 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>과제2 이벤트 드리븐 시스템 구현</title>
+<style>
+@page { size: A4; margin: 16mm 15mm; }
+body { font: 10.5pt/1.65 'Malgun Gothic', sans-serif; color: #1e293b; margin: 0; }
+h1 { font-size: 21pt; margin: 0 0 4mm; color: #0f172a; }
+h2 { font-size: 14.5pt; border-bottom: 2px solid #0f172a; padding-bottom: 2mm; margin: 9mm 0 4mm; break-after: avoid; }
+h3 { font-size: 11.5pt; margin: 6mm 0 2mm; color: #1d4ed8; break-after: avoid; }
+p { margin: 0 0 2.5mm; }
+table { border-collapse: collapse; width: 100%; margin: 2mm 0 4mm; font-size: 9.5pt; }
+th, td { border: 1px solid #cbd5e1; padding: 1.6mm 2.2mm; vertical-align: top; text-align: left; }
+th { background: #f1f5f9; }
+tr { break-inside: avoid; }
+code { font-family: Consolas, monospace; font-size: 9pt; background: #f1f5f9; padding: 0 1mm; border-radius: 2px; }
+pre { font: 8.6pt/1.5 Consolas, 'Malgun Gothic', monospace; background: #f8fafc; border: 1px solid #e2e8f0; padding: 3mm; white-space: pre-wrap; margin: 2mm 0 4mm; }
+blockquote { margin: 2mm 0 4mm; padding: 2mm 4mm; border-left: 3px solid #94a3b8; background: #f8fafc; white-space: pre-wrap; }
+figure { margin: 3mm 0 5mm; break-inside: avoid; }
+figure img { width: 100%; border: 1px solid #cbd5e1; }
+figure svg { width: 100%; height: auto; }
+figcaption { font-size: 9pt; color: #475569; margin-top: 1.5mm; }
+ol.flow li { margin-bottom: 1.6mm; }
+.cover { height: 255mm; display: flex; flex-direction: column; justify-content: center; break-after: page; }
+.cover .sub { font-size: 13pt; color: #475569; margin-bottom: 18mm; }
+.cover table { width: 90mm; font-size: 11pt; }
+.cover td { border: none; border-bottom: 1px solid #94a3b8; height: 9mm; }
+.cover td:first-child { width: 22mm; color: #475569; }
+.ok { color: #15803d; font-weight: 700; }
+.src { font-size: 7.4pt; line-height: 1.42; }
+.src .ln { color: #94a3b8; user-select: none; margin-right: 3mm; }
+.pb { break-before: page; }
+</style></head><body>
+
+<section class="cover">
+<h1>과제2 · 이벤트 드리븐 아키텍처 스타일 시스템 구현</h1>
+<div class="sub">온라인 경매 시스템 — 브로커 토폴로지 (Python asyncio)</div>
+<table><tr><td>과목</td><td>소프트웨어아키텍처설계</td></tr><tr><td>학번</td><td>202110914</td></tr>
+<tr><td>이름</td><td>김대진</td></tr><tr><td>제출일</td><td>2026년 10월 25일</td></tr></table>
+</section>
+
+<h2>1. 사용한 프롬프트</h2>
+<p>Claude Code(Claude Opus 5.5)에 아래 두 프롬프트를 주어 설계·구현했습니다. 프롬프트 2의 구현은 Claude Code가 띄운 Sonnet 서브에이전트가 맡았고, 결과 코드를 검토해 로그 문구 한 곳을 고쳤습니다.</p>
+<h3>프롬프트 1 — 과제 전달</h3>
+<blockquote>이벤트 드리븐 아키텍처 스타일을 가지는 시스템 구현
+(시스템의 규모보다 이벤트 드리븐 아키텍처 스타일의 컴포넌트, 커넥터, 제약조건을 정확히 따르는 것이 중요함)
+제출 내용: 1. 사용한 프롬프트 2. 시스템 주요 구성 컴포넌트를 포함한 전체 동작 흐름 3. 실행 결과 캡쳐 4. 기타 시스템 설명에 필요한 내용</blockquote>
+<h3>프롬프트 2 — 구현 지시</h3>
+<pre>Python 3 표준 라이브러리(asyncio)만 써서, &quot;브로커 토폴로지 이벤트 드리븐 아키텍처&quot;를 따르는
+온라인 경매 시스템을 하나의 실행 가능한 프로그램으로 구현해 줘. 규모는 작아도 되지만
+이벤트 드리븐 스타일의 컴포넌트·커넥터·제약조건을 정확히 지켜야 한다.
+
+[도메인]
+입찰자가 물건에 입찰한다. 입찰 프로듀서가 만든 입찰 이벤트를 입찰 캡처, 입찰 추적,
+입찰 분석 서비스가 각자 받아 처리한다. 경매가 끝나면 낙찰 처리를 한다.
+
+[컴포넌트]
+1. 이벤트 브로커(EventBroker): 이벤트를 &quot;전달만&quot; 한다. 워크플로우 판단·비즈니스 로직 금지.
+   - 이벤트 채널 = 토픽. 한 브로커에 여러 토픽(bid.placed, bid.highest_changed,
+     auction.closed, auction.settled, notification.sent, deadletter)을 둔다.
+   - 구독(subscription)마다 자기 큐를 가진다. 같은 토픽의 구독자들은 서로 간섭 없이
+     각자 속도로 소비한다(발행/구독).
+   - 같은 구독 이름으로 워커를 여러 개 붙이면 한 큐를 나눠 소비한다(경쟁 소비자 = 그 프로세서만 확장).
+2. 이벤트 발행자(시작 이벤트): BidProducer(입찰자 입찰 → BidPlaced), AuctionClock(마감 → AuctionClosed).
+3. 이벤트 구독자(이벤트 프로세서): 처리 후 &quot;처리 이벤트&quot;를 발행할 수 있다.
+   - BidCapture: 모든 입찰을 기록한다.
+   - BidTracker: 최고가를 추적하고, 최고가가 바뀌면 HighestBidChanged를 발행한다.
+   - BidAnalytics: 느린 통계 처리(입찰 수, 평균가). 워커 2개로 확장한다.
+   - Notifier: HighestBidChanged·AuctionSettled를 받아 알림을 보내고 NotificationSent를 발행한다.
+   - Settlement: AuctionClosed를 받아 낙찰자를 확정하고 AuctionSettled를 발행한다.
+     (최고가 정보는 BidTracker를 호출하지 말고 자신이 구독한 이벤트로 스스로 유지한다.)
+
+[커넥터]
+- 통신 메커니즘: 브로커의 publish/subscribe와 구독별 asyncio.Queue.
+- 데이터 형식 변환(어댑터): 이벤트는 JSON 문자열로 직렬화해 채널에 넣고, 꺼낼 때 역직렬화한다.
+- 이벤트 봉투(envelope): event_id, type(과거형 이름), topic, timestamp, ttl, payload.
+
+[제약조건 — 반드시 지키고 코드로 검사]
+C1. 컴포넌트끼리 직접 참조·호출하지 않는다. 브로커를 통해서만 통신한다.
+    실행 시작 시 각 컴포넌트의 속성을 검사해 다른 컴포넌트 참조가 없음을 확인하고 결과를 출력한다.
+C2. 비동기 통신: publish는 기다리지 않고 즉시 반환한다. 발행자는 처리 결과를 기다리지 않는다.
+    입찰 발행에 걸린 시간과 분석 처리에 걸린 시간을 비교해 출력한다.
+C3. 이벤트는 이미 일어난 사실(과거형)이고 응답을 요구하지 않는다.
+C4. 익명성: 발행자는 구독자를 모른다(토픽만 안다).
+
+[메시지 전달 신뢰성]
+- 승인(ack): 구독자가 처리를 끝내면 ack한다. 예외가 나면 최대 3번 재시도하고,
+  그래도 실패하면 deadletter 토픽으로 보낸다.
+- 만료(TTL): 만료된 이벤트는 처리하지 않고 버린 뒤 로그를 남긴다.
+- 내고장성 시연: BidAnalytics가 특정 입찰(금액이 13의 배수)에서 일부러 실패하게 하고,
+  다른 구독자는 영향 없이 계속 처리됨을 보인다.
+
+[실행·출력]
+- `python auction_eda.py` 한 번으로 끝까지 돌고 5초 안에 종료한다. random seed 고정.
+- 콘솔에 시각(경과 ms)·컴포넌트·이벤트를 한 줄씩 한국어로 출력한다. UTF-8로 출력한다.
+- 마지막에 요약(토픽별 발행 수, 구독별 처리·재시도·DLQ·만료 수, 낙찰 결과, 제약 검사 결과)을 표로 출력한다.
+- 같은 내용을 run_log.txt로도 저장한다.
+- 파일은 auction_eda.py 하나. 클래스·메서드에 짧은 한국어 주석을 단다.</pre>
+
+<h2 class="pb">2. 시스템 구성과 전체 동작 흐름</h2>
+<h3>2.1 도메인과 스타일 선택 이유</h3>
+<p>온라인 경매는 입찰이 동시에 많이 들어옵니다. 입찰 하나를 기록·추적·분석·알림 서비스가 각자 처리해야 하므로 <b>응답성·확장성·기능확장성</b>이 중요합니다. 그래서 발행자와 구독자를 떼어 놓는 이벤트 드리븐 스타일을 골랐습니다.</p>
+<p>흐름이 단순하고 처리 서비스끼리 순서를 맞출 필요가 거의 없으므로 중재자 대신 <b>브로커 토폴로지</b>를 썼습니다. 브로커는 워크플로우를 제어하지 않고 이벤트를 전달만 합니다.</p>
+
+<h3>2.2 컴포넌트 · 커넥터 · 제약조건</h3>
+<table>
+<tr><th style="width:17%">구분</th><th style="width:37%">스타일의 요소</th><th>이 시스템의 구현</th></tr>
+<tr><td rowspan="3"><b>컴포넌트</b></td><td>이벤트 발행자 (시작 이벤트)</td><td><code>BidProducer</code>(입찰 → BidPlaced), <code>AuctionClock</code>(마감 → AuctionClosed)</td></tr>
+<tr><td>이벤트 브로커</td><td><code>EventBroker</code>: 토픽 6개와 구독별 큐를 관리합니다. 비즈니스 로직은 없습니다.</td></tr>
+<tr><td>이벤트 구독자 (처리 후 처리 이벤트 발행 가능)</td><td><code>BidCapture</code>, <code>BidTracker</code>, <code>BidAnalytics</code>(워커 2개), <code>Notifier</code>, <code>Settlement</code>, <code>DeadLetterMonitor</code></td></tr>
+<tr><td rowspan="3"><b>커넥터</b></td><td>이벤트 채널</td><td>토픽 6개: <code>bid.placed</code>, <code>bid.highest_changed</code>, <code>auction.closed</code>, <code>auction.settled</code>, <code>notification.sent</code>, <code>deadletter</code></td></tr>
+<tr><td>통신 메커니즘</td><td><code>publish()</code>/<code>subscribe()</code>, 구독마다 하나씩 있는 <code>asyncio.Queue</code></td></tr>
+<tr><td>데이터 형식 변환 (어댑터)</td><td><code>Envelope.dumps()</code>/<code>loads()</code>: 이벤트를 JSON 문자열로 바꿔 채널에 넣고, 꺼낼 때 객체로 되돌립니다. 봉투 필드는 event_id, type, topic, timestamp, ttl, payload입니다.</td></tr>
+<tr><td rowspan="4"><b>제약조건</b></td><td>C1 컴포넌트끼리 직접 참조·호출하지 않음</td><td>모든 컴포넌트는 <code>broker</code>만 가집니다. 실행 시작 때 속성을 검사합니다.</td></tr>
+<tr><td>C2 비동기 통신</td><td><code>publish()</code>는 <code>put_nowait</code>로 바로 반환합니다. 발행자는 처리 결과를 기다리지 않습니다.</td></tr>
+<tr><td>C3 이벤트 = 이미 일어난 사실, 응답을 요구하지 않음</td><td>이벤트 이름이 모두 과거형입니다(BidPlaced, AuctionClosed …). 반환값을 쓰지 않습니다.</td></tr>
+<tr><td>C4 익명성 (발행자는 구독자를 모름)</td><td>발행자는 토픽 이름만 압니다. 구독자 목록은 브로커 안에만 있습니다.</td></tr>
+</table>
+
+<h3>2.3 구성도</h3>
+<figure><svg viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg" font-family="Malgun Gothic, sans-serif">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#334155"/></marker><marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#15803d"/></marker></defs>
+<text x="110" y="34" text-anchor="middle" font-size="15" font-weight="700" fill="#1d4ed8">이벤트 발행자</text>
+<text x="450" y="34" text-anchor="middle" font-size="15" font-weight="700" fill="#334155">이벤트 브로커</text>
+<text x="830" y="34" text-anchor="middle" font-size="15" font-weight="700" fill="#15803d">이벤트 구독자(프로세서)</text>
+<rect x="300" y="52" width="300" height="456" rx="12" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5"/>
+<text x="450" y="76" text-anchor="middle" font-size="12" fill="#475569">EventBroker — 전달만 · 이벤트 채널 = 토픽</text>
+<rect x="320" y="92" width="260" height="48" rx="6" fill="#fff" stroke="#94a3b8"/>
+<text x="450" y="112" text-anchor="middle" font-size="13.5" font-weight="700" font-family="Consolas, monospace" fill="#0f172a">bid.placed</text>
+<text x="450" y="130" text-anchor="middle" font-size="11" fill="#64748b">BidPlaced · 발행: BidProducer</text>
+<rect x="320" y="158" width="260" height="48" rx="6" fill="#fff" stroke="#94a3b8"/>
+<text x="450" y="178" text-anchor="middle" font-size="13.5" font-weight="700" font-family="Consolas, monospace" fill="#0f172a">bid.highest_changed</text>
+<text x="450" y="196" text-anchor="middle" font-size="11" fill="#64748b">HighestBidChanged · 발행: BidTracker</text>
+<rect x="320" y="224" width="260" height="48" rx="6" fill="#fff" stroke="#94a3b8"/>
+<text x="450" y="244" text-anchor="middle" font-size="13.5" font-weight="700" font-family="Consolas, monospace" fill="#0f172a">auction.closed</text>
+<text x="450" y="262" text-anchor="middle" font-size="11" fill="#64748b">AuctionClosed · 발행: AuctionClock</text>
+<rect x="320" y="290" width="260" height="48" rx="6" fill="#fff" stroke="#94a3b8"/>
+<text x="450" y="310" text-anchor="middle" font-size="13.5" font-weight="700" font-family="Consolas, monospace" fill="#0f172a">auction.settled</text>
+<text x="450" y="328" text-anchor="middle" font-size="11" fill="#64748b">AuctionSettled · 발행: Settlement</text>
+<rect x="320" y="356" width="260" height="48" rx="6" fill="#fef2f2" stroke="#dc2626"/>
+<text x="450" y="376" text-anchor="middle" font-size="13.5" font-weight="700" font-family="Consolas, monospace" fill="#0f172a">deadletter</text>
+<text x="450" y="394" text-anchor="middle" font-size="11" fill="#64748b">EventDeadLettered · 발행: 구독 워커</text>
+<rect x="320" y="422" width="260" height="48" rx="6" fill="#fff" stroke="#94a3b8"/>
+<text x="450" y="442" text-anchor="middle" font-size="13.5" font-weight="700" font-family="Consolas, monospace" fill="#0f172a">notification.sent</text>
+<text x="450" y="460" text-anchor="middle" font-size="11" fill="#64748b">NotificationSent · 발행: Notifier</text>
+<rect x="20" y="88" width="180" height="56" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+<text x="110" y="112" text-anchor="middle" font-size="14" font-weight="700" fill="#1e3a8a">BidProducer</text>
+<text x="110" y="131" text-anchor="middle" font-size="11" fill="#475569">입찰 → 시작 이벤트</text>
+<line x1="200" y1="116" x2="318" y2="116" stroke="#334155" stroke-width="2" marker-end="url(#a)"/>
+<text x="259" y="108" text-anchor="middle" font-size="10.5" fill="#334155">publish</text>
+<rect x="20" y="220" width="180" height="56" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+<text x="110" y="244" text-anchor="middle" font-size="14" font-weight="700" fill="#1e3a8a">AuctionClock</text>
+<text x="110" y="263" text-anchor="middle" font-size="11" fill="#475569">마감 → 시작 이벤트</text>
+<line x1="200" y1="248" x2="318" y2="248" stroke="#334155" stroke-width="2" marker-end="url(#a)"/>
+<text x="259" y="240" text-anchor="middle" font-size="10.5" fill="#334155">publish</text>
+<path d="M580,116 C650,116 650,93 718,93" fill="none" stroke="#15803d" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#b)"/>
+<path d="M580,116 C650,116 650,169 718,169" fill="none" stroke="#15803d" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#b)"/>
+<path d="M580,116 C650,116 650,245 718,245" fill="none" stroke="#15803d" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#b)"/>
+<path d="M580,182 C650,182 650,321 718,321" fill="none" stroke="#15803d" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#b)"/>
+<path d="M580,182 C650,182 650,397 718,397" fill="none" stroke="#15803d" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#b)"/>
+<path d="M580,248 C650,248 650,397 718,397" fill="none" stroke="#15803d" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#b)"/>
+<path d="M580,314 C650,314 650,321 718,321" fill="none" stroke="#15803d" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#b)"/>
+<path d="M580,380 C650,380 650,473 718,473" fill="none" stroke="#15803d" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#b)"/>
+<rect x="720" y="62" width="225" height="62" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="832" y="82" text-anchor="middle" font-size="13.5" font-weight="700" fill="#14532d">BidCapture</text>
+<text x="832" y="99" text-anchor="middle" font-size="11" fill="#475569">모든 입찰 기록</text>
+<rect x="720" y="138" width="225" height="62" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="832" y="158" text-anchor="middle" font-size="13.5" font-weight="700" fill="#14532d">BidTracker</text>
+<text x="832" y="175" text-anchor="middle" font-size="11" fill="#475569">최고가 추적</text>
+<text x="832" y="191" text-anchor="middle" font-size="10.5" fill="#b45309">발행 → bid.highest_changed</text>
+<rect x="720" y="214" width="225" height="62" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="832" y="234" text-anchor="middle" font-size="13.5" font-weight="700" fill="#14532d">BidAnalytics #1·#2</text>
+<text x="832" y="251" text-anchor="middle" font-size="11" fill="#475569">느린 통계 · 워커 2개</text>
+<text x="832" y="267" text-anchor="middle" font-size="10.5" fill="#b45309">실패 4회 → deadletter</text>
+<rect x="720" y="290" width="225" height="62" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="832" y="310" text-anchor="middle" font-size="13.5" font-weight="700" fill="#14532d">Notifier</text>
+<text x="832" y="327" text-anchor="middle" font-size="11" fill="#475569">알림 발송</text>
+<text x="832" y="343" text-anchor="middle" font-size="10.5" fill="#b45309">발행 → notification.sent</text>
+<rect x="720" y="366" width="225" height="62" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="832" y="386" text-anchor="middle" font-size="13.5" font-weight="700" fill="#14532d">Settlement</text>
+<text x="832" y="403" text-anchor="middle" font-size="11" fill="#475569">낙찰 확정(최고가 자체 보관)</text>
+<text x="832" y="419" text-anchor="middle" font-size="10.5" fill="#b45309">발행 → auction.settled</text>
+<rect x="720" y="442" width="225" height="62" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="832" y="462" text-anchor="middle" font-size="13.5" font-weight="700" fill="#14532d">DeadLetterMonitor</text>
+<text x="832" y="479" text-anchor="middle" font-size="11" fill="#475569">실패 이벤트 기록</text>
+<line x1="320" y1="526" x2="350" y2="526" stroke="#334155" stroke-width="2" marker-end="url(#a)"/><text x="356" y="530" font-size="11" fill="#334155">publish (즉시 반환)</text><line x1="490" y1="526" x2="520" y2="526" stroke="#15803d" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#b)"/><text x="526" y="530" font-size="11" fill="#334155">구독별 큐로 전달 (JSON 문자열)</text>
+</svg><figcaption>그림 1. 컴포넌트와 커넥터. 실선은 발행, 점선은 브로커가 구독별 큐로 전달하는 경로입니다. 구독자가 발행하는 처리 이벤트는 상자 아래 주황 글씨로 표시했습니다(선을 그리면 교차가 많아 생략).</figcaption></figure>
+
+<h3>2.4 이벤트 목록</h3>
+<table>
+<tr><th>토픽</th><th>이벤트</th><th>발행자</th><th>구독자</th></tr>
+<tr><td><code>bid.placed</code></td><td>BidPlaced</td><td>BidProducer</td><td>BidCapture, BidTracker, BidAnalytics</td></tr>
+<tr><td><code>bid.highest_changed</code></td><td>HighestBidChanged</td><td>BidTracker</td><td>Notifier, Settlement</td></tr>
+<tr><td><code>auction.closed</code></td><td>AuctionClosed</td><td>AuctionClock</td><td>Settlement</td></tr>
+<tr><td><code>auction.settled</code></td><td>AuctionSettled</td><td>Settlement</td><td>Notifier</td></tr>
+<tr><td><code>notification.sent</code></td><td>NotificationSent</td><td>Notifier</td><td>(없음 — 외부 연계용으로 열어 둠)</td></tr>
+<tr><td><code>deadletter</code></td><td>EventDeadLettered</td><td>구독 워커(재시도 초과)</td><td>DeadLetterMonitor</td></tr>
+</table>
+
+<h3>2.5 전체 동작 흐름</h3>
+<p>괄호 안 시각은 3장 실행 결과의 경과 시간입니다.</p>
+<ol class="flow">
+<li><b>시작·제약 검사</b>: 브로커와 컴포넌트 8개를 만들고, 구독자는 생성 시 토픽을 구독합니다. 각 컴포넌트에 다른 컴포넌트 참조가 없는지 검사합니다(C1).</li>
+<li><b>입찰 발행</b>: <code>BidProducer</code>가 입찰 26건을 <code>bid.placed</code>에 발행합니다. 발행 전체가 0.344ms 만에 끝나고, 처리 결과는 기다리지 않습니다(2.1ms).</li>
+<li><b>브로커 전달</b>: 브로커는 이벤트를 JSON으로 바꿔 <code>bid.placed</code>의 구독 큐 3개(Capture·Tracker·Analytics)에 각각 넣습니다. 구독자는 자기 큐를 자기 속도로 소비합니다.</li>
+<li><b>기록·추적</b>: <code>BidCapture</code>가 입찰을 기록합니다. <code>BidTracker</code>는 최고가가 바뀔 때마다 처리 이벤트 <code>HighestBidChanged</code>를 발행합니다(317원 → 392원 → 398원).</li>
+<li><b>연쇄 반응</b>: <code>HighestBidChanged</code>를 구독한 <code>Notifier</code>가 알림을 보냅니다. <code>Settlement</code>는 BidTracker를 호출하지 않고 이 이벤트로 자기 최고가를 유지합니다. 마지막 알림 시각은 3.2ms입니다.</li>
+<li><b>느린 분석·장애 격리</b>: <code>BidAnalytics</code>는 워커 2개가 한 큐를 나눠 처리합니다. 13의 배수 입찰에서 일부러 실패하면 3번 재시도한 뒤 <code>deadletter</code>로 보내고(첫 DLQ 235.1ms), <code>DeadLetterMonitor</code>가 받아 기록합니다. 다른 구독자는 이미 처리를 끝냈습니다.</li>
+<li><b>만료</b>: ttl=0으로 보낸 입찰 3건은 모든 구독자가 처리하지 않고 버립니다.</li>
+<li><b>마감·낙찰</b>: <code>AuctionClock</code>이 <code>AuctionClosed</code>를 발행합니다(855.0ms). <code>Settlement</code>가 낙찰자를 확정해 <code>AuctionSettled</code>를 발행하고, <code>Notifier</code>가 결과를 알립니다(855.2ms).</li>
+<li><b>요약</b>: C2~C4를 검사하고, 토픽별 발행 수와 구독별 처리·재시도·DLQ·만료 수를 출력합니다.</li>
+</ol>
+
+<h2 class="pb">3. 실행 결과 캡처</h2>
+<p><code>python auction_eda.py</code>를 한 번 실행한 콘솔 출력입니다(Python 3.14, Windows 11, 약 1초). 출력 138줄 전체를 세 장으로 나눠 실었습니다. 화면은 콘솔 출력을 터미널 화면으로 그려 캡처한 것이고, 같은 내용이 <code>run_log.txt</code>에 저장됩니다.</p>
+<figure><img src="capture/cap1.png"><figcaption>그림 2. 출력 1~47줄 — C1 제약 검사(PASS), 입찰 26건 발행(0.344ms), BidCapture·BidTracker 처리, 최고가 변경 알림, 만료 폐기</figcaption></figure>
+<figure><img src="capture/cap2.png"><figcaption>그림 3. 출력 48~95줄 — BidAnalytics 워커 #1·#2 분산 처리, 실패 → 재시도 1/3~3/3 → deadletter → DeadLetterMonitor 수신</figcaption></figure>
+<figure><img src="capture/cap3.png"><figcaption>그림 4. 출력 96~138줄 — 경매 마감, 낙찰 확정·알림, C2~C4 검사, 요약 표</figcaption></figure>
+
+<h2 class="pb">4. 기타 — 설계 검증과 트레이드오프</h2>
+<h3>4.1 제약조건을 지켰는지 확인한 방법</h3>
+<table>
+<tr><th style="width:24%">제약</th><th>확인 방법</th><th style="width:12%">결과</th></tr>
+<tr><td>C1 직접 참조 없음</td><td>각 컴포넌트의 속성(<code>vars()</code>)을 재귀로 훑어 다른 컴포넌트 객체·바운드 메서드가 있는지 찾습니다. 검사기 자체가 동작하는지 보려고 일부러 A가 B를 참조하게 만든 객체로 위반을 잡아내는 자가검증도 합니다.</td><td class="ok">PASS</td></tr>
+<tr><td>C2 비동기 발행</td><td>입찰 26건 발행 시간(0.344ms)과 BidAnalytics 처리 시간(851.7ms)을 비교합니다. 발행이 처리 완료를 기다렸다면 발행 시간이 처리 시간보다 길어야 합니다.</td><td class="ok">PASS</td></tr>
+<tr><td>C3 과거형 이벤트</td><td>실제로 발행된 이벤트 type 6종이 모두 과거형인지 검사합니다.</td><td class="ok">PASS</td></tr>
+<tr><td>C4 익명성</td><td>발행자 객체에 구독(Subscription) 정보가 없는지 검사합니다.</td><td class="ok">PASS</td></tr>
+</table>
+
+<h3>4.2 메시지 전달 신뢰성 (ED 슬라이드의 승인·만료)</h3>
+<ul>
+<li><b>승인(ack)</b>: 구독 워커는 처리가 끝나야 <code>task_done()</code>으로 승인합니다. 예외가 나면 최대 3번 재시도합니다.</li>
+<li><b>데드레터</b>: 재시도를 넘기면 원래 이벤트를 <code>deadletter</code> 토픽으로 보내 잃지 않습니다. 실행 결과는 7건이었습니다.</li>
+<li><b>만료(TTL)</b>: 봉투에 유효기간을 넣고, 만료된 이벤트는 처리하지 않고 버린 뒤 로그를 남깁니다.</li>
+</ul>
+
+<h3>4.3 실행에서 확인한 품질속성</h3>
+<table>
+<tr><th style="width:18%">품질속성</th><th>실행 결과에서 보이는 근거</th></tr>
+<tr><td>응답성·성능</td><td>발행자는 0.344ms 만에 반환했습니다. 입찰자 알림은 3.2ms에 끝났고, 느린 분석(851.7ms)을 기다리지 않았습니다.</td></tr>
+<tr><td>내고장성</td><td>BidAnalytics가 7건에서 실패하는 동안에도 BidCapture·BidTracker·Notifier는 23건을 모두 처리했습니다.</td></tr>
+<tr><td>확장성</td><td>느린 BidAnalytics만 워커 2개로 늘렸고(#1 11건, #2 5건), 다른 서비스는 바꾸지 않았습니다.</td></tr>
+<tr><td>기능확장성</td><td>새 구독자(예: DeadLetterMonitor)는 생성자에서 <code>listen()</code>으로 토픽을 구독하기만 하면 됩니다. 발행자 코드는 바뀌지 않습니다.</td></tr>
+</table>
+
+<h3>4.4 한계와 트레이드오프</h3>
+<ul>
+<li><b>흐름 제어가 없습니다.</b> 브로커는 "입찰 처리가 다 끝난 뒤 마감"을 보장하지 않습니다. 이 시연은 <code>broker.drain()</code>으로 큐가 빈 뒤에 마감 이벤트를 발행했습니다. 실제로는 마감 직전 입찰이 Settlement에 늦게 도착하면 낙찰자가 틀릴 수 있습니다(데이터 비일관성). 대책은 입찰 시각을 마감 시각과 비교하거나, 마감·낙찰 흐름만 중재자로 관리하는 것입니다.</li>
+<li><b>복구성이 낮습니다.</b> deadletter로 간 분석 이벤트는 자동으로 다시 처리되지 않아 통계가 틀어집니다. 사람이 확인하거나 재투입 도구가 필요합니다.</li>
+<li><b>디버깅이 어렵습니다.</b> 처리 순서가 구독자마다 달라서, 시각이 찍힌 로그 없이는 흐름을 따라가기 어렵습니다.</li>
+<li><b>인메모리 브로커입니다.</b> 프로세스가 끝나면 큐가 사라집니다. 실제 시스템에서는 Kafka, RabbitMQ처럼 메시지를 영속 저장하는 브로커로 바꿉니다. 컴포넌트는 <code>publish/subscribe</code>만 쓰므로 브로커만 교체하면 됩니다.</li>
+</ul>
+
+<h3>4.5 실행 방법과 파일</h3>
+<table>
+<tr><th style="width:30%">파일</th><th>내용</th></tr>
+<tr><td><code>auction_eda.py</code></td><td>시스템 전체(표준 라이브러리만 사용, 401줄). <code>python auction_eda.py</code>로 실행합니다.</td></tr>
+<tr><td><code>run_log.txt</code></td><td>실행 출력 저장본</td></tr>
+<tr><td><code>prompt.md</code></td><td>1장의 프롬프트 원문</td></tr>
+</table>
+
+<h2 class="pb">부록. 소스 코드 (auction_eda.py)</h2>
+<pre class="src"><span class="ln">  1</span>&quot;&quot;&quot;브로커 토폴로지 이벤트 드리븐 온라인 경매 시스템 (표준 라이브러리 asyncio만 사용).&quot;&quot;&quot;
+<span class="ln">  2</span>import asyncio
+<span class="ln">  3</span>import json
+<span class="ln">  4</span>import os
+<span class="ln">  5</span>import random
+<span class="ln">  6</span>import sys
+<span class="ln">  7</span>import time
+<span class="ln">  8</span>from dataclasses import dataclass, asdict, field
+<span class="ln">  9</span>
+<span class="ln"> 10</span>MAX_RETRY = 3          # 처리 실패 시 최대 재시도 횟수
+<span class="ln"> 11</span>SEED = 20261025        # 난수 고정
+<span class="ln"> 12</span>T0 = time.perf_counter()
+<span class="ln"> 13</span>LOG: list[str] = []
+<span class="ln"> 14</span>
+<span class="ln"> 15</span>
+<span class="ln"> 16</span>def log(who: str, msg: str) -&gt; None:
+<span class="ln"> 17</span>    &quot;&quot;&quot;시각(경과 ms)·컴포넌트·내용을 한 줄로 출력하고 보관한다.&quot;&quot;&quot;
+<span class="ln"> 18</span>    line = f&quot;[{(time.perf_counter() - T0) * 1000:8.1f}ms] {who:&lt;18}| {msg}&quot;
+<span class="ln"> 19</span>    LOG.append(line)
+<span class="ln"> 20</span>    print(line)
+<span class="ln"> 21</span>
+<span class="ln"> 22</span>
+<span class="ln"> 23</span>def now_ms() -&gt; float:
+<span class="ln"> 24</span>    return (time.perf_counter() - T0) * 1000
+<span class="ln"> 25</span>
+<span class="ln"> 26</span>
+<span class="ln"> 27</span># ───────────────────────── 커넥터: 이벤트 봉투 + JSON 어댑터 ─────────────────────────
+<span class="ln"> 28</span>@dataclass
+<span class="ln"> 29</span>class Envelope:
+<span class="ln"> 30</span>    &quot;&quot;&quot;이벤트 봉투. 과거형 type, 토픽, 발생 시각(ms), 유효기간(ttl, ms), 내용(payload).&quot;&quot;&quot;
+<span class="ln"> 31</span>    event_id: str
+<span class="ln"> 32</span>    type: str
+<span class="ln"> 33</span>    topic: str
+<span class="ln"> 34</span>    timestamp: float
+<span class="ln"> 35</span>    ttl: float
+<span class="ln"> 36</span>    payload: dict = field(default_factory=dict)
+<span class="ln"> 37</span>
+<span class="ln"> 38</span>    def dumps(self) -&gt; str:      # 어댑터: 객체 -&gt; JSON 문자열
+<span class="ln"> 39</span>        return json.dumps(asdict(self), ensure_ascii=False)
+<span class="ln"> 40</span>
+<span class="ln"> 41</span>    @staticmethod
+<span class="ln"> 42</span>    def loads(raw: str) -&gt; &quot;Envelope&quot;:   # 어댑터: JSON 문자열 -&gt; 객체
+<span class="ln"> 43</span>        return Envelope(**json.loads(raw))
+<span class="ln"> 44</span>
+<span class="ln"> 45</span>    def expired(self) -&gt; bool:
+<span class="ln"> 46</span>        return now_ms() - self.timestamp &gt;= self.ttl
+<span class="ln"> 47</span>
+<span class="ln"> 48</span>
+<span class="ln"> 49</span># ───────────────────────── 이벤트 브로커 ─────────────────────────
+<span class="ln"> 50</span>class Subscription:
+<span class="ln"> 51</span>    &quot;&quot;&quot;구독 하나 = 이름 + 자기 큐 + 통계. 같은 이름으로 붙은 워커들이 큐를 나눠 소비한다.&quot;&quot;&quot;
+<span class="ln"> 52</span>    def __init__(self, name: str, topic: str):
+<span class="ln"> 53</span>        self.name, self.topic = name, topic
+<span class="ln"> 54</span>        self.queue: asyncio.Queue = asyncio.Queue()
+<span class="ln"> 55</span>        self.processed = self.retried = self.dlq = self.expired = 0
+<span class="ln"> 56</span>
+<span class="ln"> 57</span>
+<span class="ln"> 58</span>class EventBroker:
+<span class="ln"> 59</span>    &quot;&quot;&quot;이벤트를 전달만 한다. 비즈니스 로직 없음. 토픽별 구독 큐에 JSON 문자열을 넣는다.&quot;&quot;&quot;
+<span class="ln"> 60</span>    TOPICS = [&quot;bid.placed&quot;, &quot;bid.highest_changed&quot;, &quot;auction.closed&quot;,
+<span class="ln"> 61</span>              &quot;auction.settled&quot;, &quot;notification.sent&quot;, &quot;deadletter&quot;]
+<span class="ln"> 62</span>
+<span class="ln"> 63</span>    def __init__(self):
+<span class="ln"> 64</span>        self.subs: dict[str, list[Subscription]] = {t: [] for t in self.TOPICS}
+<span class="ln"> 65</span>        self.published = {t: 0 for t in self.TOPICS}
+<span class="ln"> 66</span>        self.seq = 0
+<span class="ln"> 67</span>        self.types_seen: set[str] = set()
+<span class="ln"> 68</span>
+<span class="ln"> 69</span>    def subscribe(self, topic: str, name: str) -&gt; Subscription:
+<span class="ln"> 70</span>        sub = Subscription(name, topic)
+<span class="ln"> 71</span>        self.subs[topic].append(sub)
+<span class="ln"> 72</span>        return sub
+<span class="ln"> 73</span>
+<span class="ln"> 74</span>    def publish(self, topic: str, type_: str, payload: dict, ttl: float = 5000) -&gt; None:
+<span class="ln"> 75</span>        &quot;&quot;&quot;기다리지 않고 즉시 반환(put_nowait). 누가 구독하는지는 모른다.&quot;&quot;&quot;
+<span class="ln"> 76</span>        self.seq += 1
+<span class="ln"> 77</span>        env = Envelope(f&quot;evt-{self.seq:04d}&quot;, type_, topic, now_ms(), ttl, payload)
+<span class="ln"> 78</span>        raw = env.dumps()
+<span class="ln"> 79</span>        self.published[topic] += 1
+<span class="ln"> 80</span>        self.types_seen.add(type_)
+<span class="ln"> 81</span>        for sub in self.subs[topic]:
+<span class="ln"> 82</span>            sub.queue.put_nowait(raw)
+<span class="ln"> 83</span>
+<span class="ln"> 84</span>    async def drain(self) -&gt; None:
+<span class="ln"> 85</span>        &quot;&quot;&quot;(시연 보조) 모든 큐가 비고 더 이상 새 발행이 없을 때까지 대기.&quot;&quot;&quot;
+<span class="ln"> 86</span>        while True:
+<span class="ln"> 87</span>            before = self.seq
+<span class="ln"> 88</span>            await asyncio.gather(*(s.queue.join() for ss in self.subs.values() for s in ss))
+<span class="ln"> 89</span>            await asyncio.sleep(0)
+<span class="ln"> 90</span>            if self.seq == before:
+<span class="ln"> 91</span>                return
+<span class="ln"> 92</span>
+<span class="ln"> 93</span>    def close(self, workers_per_sub: dict[str, int]) -&gt; None:
+<span class="ln"> 94</span>        &quot;&quot;&quot;워커 종료 신호(None)를 구독별 워커 수만큼 넣는다.&quot;&quot;&quot;
+<span class="ln"> 95</span>        for ss in self.subs.values():
+<span class="ln"> 96</span>            for s in ss:
+<span class="ln"> 97</span>                for _ in range(workers_per_sub.get(s.name, 1)):
+<span class="ln"> 98</span>                    s.queue.put_nowait(None)
+<span class="ln"> 99</span>
+<span class="ln">100</span>
+<span class="ln">101</span># ───────────────────────── 컴포넌트 공통 ─────────────────────────
+<span class="ln">102</span>class Component:
+<span class="ln">103</span>    &quot;&quot;&quot;모든 컴포넌트의 기반. 브로커만 알고 다른 컴포넌트는 모른다.&quot;&quot;&quot;
+<span class="ln">104</span>    def __init__(self, name: str, broker: EventBroker):
+<span class="ln">105</span>        self.name = name
+<span class="ln">106</span>        self.broker = broker
+<span class="ln">107</span>        self.subs: list[Subscription] = []
+<span class="ln">108</span>        self.tasks: list[asyncio.Task] = []
+<span class="ln">109</span>        self.workers: dict[str, int] = {}
+<span class="ln">110</span>
+<span class="ln">111</span>    def listen(self, topic: str, handler, workers: int = 1, sub_name: str | None = None) -&gt; None:
+<span class="ln">112</span>        &quot;&quot;&quot;토픽을 구독하고 워커를 띄운다. 워커가 여러 개면 한 큐를 나눠 소비(경쟁 소비자).&quot;&quot;&quot;
+<span class="ln">113</span>        sub = self.broker.subscribe(topic, sub_name or self.name)
+<span class="ln">114</span>        self.subs.append(sub)
+<span class="ln">115</span>        self.workers[sub.name] = workers
+<span class="ln">116</span>        for i in range(1, workers + 1):
+<span class="ln">117</span>            wid = f&quot;{self.name}#{i}&quot; if workers &gt; 1 else self.name
+<span class="ln">118</span>            self.tasks.append(asyncio.create_task(self._worker(sub, handler, wid)))
+<span class="ln">119</span>
+<span class="ln">120</span>    async def _worker(self, sub: Subscription, handler, wid: str) -&gt; None:
+<span class="ln">121</span>        &quot;&quot;&quot;큐에서 꺼내 역직렬화 -&gt; TTL 검사 -&gt; 처리 -&gt; ack. 실패 시 재시도, 초과 시 deadletter.&quot;&quot;&quot;
+<span class="ln">122</span>        while True:
+<span class="ln">123</span>            raw = await sub.queue.get()
+<span class="ln">124</span>            if raw is None:
+<span class="ln">125</span>                sub.queue.task_done()
+<span class="ln">126</span>                return
+<span class="ln">127</span>            env = Envelope.loads(raw)
+<span class="ln">128</span>            if env.expired():                       # 만료 이벤트는 처리 없이 버리고 로그
+<span class="ln">129</span>                sub.expired += 1
+<span class="ln">130</span>                log(wid, f&quot;만료로 폐기 {env.event_id} {env.type} (ttl={env.ttl:g}ms)&quot;)
+<span class="ln">131</span>                sub.queue.task_done()
+<span class="ln">132</span>                continue
+<span class="ln">133</span>            for attempt in range(MAX_RETRY + 1):
+<span class="ln">134</span>                try:
+<span class="ln">135</span>                    await handler(env, wid)
+<span class="ln">136</span>                    sub.processed += 1              # ack
+<span class="ln">137</span>                    break
+<span class="ln">138</span>                except Exception as e:
+<span class="ln">139</span>                    if attempt &lt; MAX_RETRY:
+<span class="ln">140</span>                        sub.retried += 1
+<span class="ln">141</span>                        log(wid, f&quot;실패({e}) -&gt; 재시도 {attempt + 1}/{MAX_RETRY} {env.event_id}&quot;)
+<span class="ln">142</span>                        await asyncio.sleep(0.006)
+<span class="ln">143</span>                    else:
+<span class="ln">144</span>                        sub.dlq += 1
+<span class="ln">145</span>                        log(wid, f&quot;재시도 초과 -&gt; deadletter 전송 {env.event_id}&quot;)
+<span class="ln">146</span>                        self.broker.publish(&quot;deadletter&quot;, &quot;EventDeadLettered&quot;,
+<span class="ln">147</span>                                            {&quot;subscription&quot;: sub.name, &quot;error&quot;: str(e), &quot;event&quot;: raw})
+<span class="ln">148</span>            sub.queue.task_done()
+<span class="ln">149</span>
+<span class="ln">150</span>
+<span class="ln">151</span># ───────────────────────── 이벤트 발행자(시작 이벤트) ─────────────────────────
+<span class="ln">152</span>class BidProducer(Component):
+<span class="ln">153</span>    &quot;&quot;&quot;입찰자의 입찰을 BidPlaced 이벤트로 발행만 한다. 응답을 기다리지 않는다.&quot;&quot;&quot;
+<span class="ln">154</span>    BIDDERS = [&quot;민수&quot;, &quot;지영&quot;, &quot;철수&quot;, &quot;영희&quot;, &quot;하준&quot;]
+<span class="ln">155</span>
+<span class="ln">156</span>    def __init__(self, broker):
+<span class="ln">157</span>        super().__init__(&quot;BidProducer&quot;, broker)
+<span class="ln">158</span>        self.rng = random.Random(SEED)
+<span class="ln">159</span>
+<span class="ln">160</span>    def produce(self, auction_id: str, count: int, short_ttl_idx=()) -&gt; float:
+<span class="ln">161</span>        &quot;&quot;&quot;입찰 count건을 모두 발행하고 걸린 시간(ms)을 돌려준다.&quot;&quot;&quot;
+<span class="ln">162</span>        amounts = [self.rng.randrange(100, 400) for _ in range(count)]
+<span class="ln">163</span>        for i in (6, 15):                             # 13의 배수 입찰을 반드시 포함(분석 실패 시연)
+<span class="ln">164</span>            amounts[i] = (amounts[i] // 13 + 1) * 13
+<span class="ln">165</span>        t = time.perf_counter()
+<span class="ln">166</span>        for i, amt in enumerate(amounts):
+<span class="ln">167</span>            bidder = self.rng.choice(self.BIDDERS)
+<span class="ln">168</span>            # 일부러 ttl=0 을 줘서 만료 폐기를 시연한다(발행 즉시 만료로 간주).
+<span class="ln">169</span>            ttl = 0 if i in short_ttl_idx else 5000
+<span class="ln">170</span>            self.broker.publish(&quot;bid.placed&quot;, &quot;BidPlaced&quot;,
+<span class="ln">171</span>                                {&quot;auction_id&quot;: auction_id, &quot;bidder&quot;: bidder, &quot;amount&quot;: amt}, ttl)
+<span class="ln">172</span>        elapsed = (time.perf_counter() - t) * 1000
+<span class="ln">173</span>        log(self.name, f&quot;입찰 {count}건 발행 완료 ({elapsed:.3f}ms, 처리 결과는 기다리지 않음)&quot;)
+<span class="ln">174</span>        return elapsed
+<span class="ln">175</span>
+<span class="ln">176</span>
+<span class="ln">177</span>class AuctionClock(Component):
+<span class="ln">178</span>    &quot;&quot;&quot;마감 시각이 되면 AuctionClosed 를 발행한다.&quot;&quot;&quot;
+<span class="ln">179</span>    def close(self, auction_id: str) -&gt; None:
+<span class="ln">180</span>        log(self.name, f&quot;{auction_id} 경매 마감 -&gt; AuctionClosed 발행&quot;)
+<span class="ln">181</span>        self.broker.publish(&quot;auction.closed&quot;, &quot;AuctionClosed&quot;, {&quot;auction_id&quot;: auction_id})
+<span class="ln">182</span>
+<span class="ln">183</span>
+<span class="ln">184</span># ───────────────────────── 이벤트 구독자(프로세서) ─────────────────────────
+<span class="ln">185</span>class BidCapture(Component):
+<span class="ln">186</span>    &quot;&quot;&quot;모든 입찰을 기록한다.&quot;&quot;&quot;
+<span class="ln">187</span>    def __init__(self, broker):
+<span class="ln">188</span>        super().__init__(&quot;BidCapture&quot;, broker)
+<span class="ln">189</span>        self.records: list[dict] = []
+<span class="ln">190</span>        self.listen(&quot;bid.placed&quot;, self.handle)
+<span class="ln">191</span>
+<span class="ln">192</span>    async def handle(self, env, wid):
+<span class="ln">193</span>        self.records.append(env.payload)
+<span class="ln">194</span>        log(wid, f&quot;입찰 기록 {env.payload[&#x27;bidder&#x27;]} {env.payload[&#x27;amount&#x27;]}원&quot;)
+<span class="ln">195</span>
+<span class="ln">196</span>
+<span class="ln">197</span>class BidTracker(Component):
+<span class="ln">198</span>    &quot;&quot;&quot;최고가를 추적하고 바뀌면 HighestBidChanged 를 발행한다.&quot;&quot;&quot;
+<span class="ln">199</span>    def __init__(self, broker):
+<span class="ln">200</span>        super().__init__(&quot;BidTracker&quot;, broker)
+<span class="ln">201</span>        self.highest: dict[str, dict] = {}
+<span class="ln">202</span>        self.listen(&quot;bid.placed&quot;, self.handle)
+<span class="ln">203</span>
+<span class="ln">204</span>    async def handle(self, env, wid):
+<span class="ln">205</span>        p = env.payload
+<span class="ln">206</span>        cur = self.highest.get(p[&quot;auction_id&quot;])
+<span class="ln">207</span>        if cur is None or p[&quot;amount&quot;] &gt; cur[&quot;amount&quot;]:
+<span class="ln">208</span>            self.highest[p[&quot;auction_id&quot;]] = p
+<span class="ln">209</span>            log(wid, f&quot;최고가 갱신 {p[&#x27;bidder&#x27;]} {p[&#x27;amount&#x27;]}원 -&gt; HighestBidChanged 발행&quot;)
+<span class="ln">210</span>            self.broker.publish(&quot;bid.highest_changed&quot;, &quot;HighestBidChanged&quot;, dict(p))
+<span class="ln">211</span>
+<span class="ln">212</span>
+<span class="ln">213</span>class BidAnalytics(Component):
+<span class="ln">214</span>    &quot;&quot;&quot;느린 통계(입찰 수·평균가). 13의 배수 금액에서 일부러 실패한다. 워커 2개로 확장.&quot;&quot;&quot;
+<span class="ln">215</span>    def __init__(self, broker):
+<span class="ln">216</span>        super().__init__(&quot;BidAnalytics&quot;, broker)
+<span class="ln">217</span>        self.count = 0
+<span class="ln">218</span>        self.total = 0
+<span class="ln">219</span>        self.first_start = self.last_end = None
+<span class="ln">220</span>        self.worker_use: dict[str, int] = {}
+<span class="ln">221</span>        self.listen(&quot;bid.placed&quot;, self.handle, workers=2)
+<span class="ln">222</span>
+<span class="ln">223</span>    async def handle(self, env, wid):
+<span class="ln">224</span>        if self.first_start is None:
+<span class="ln">225</span>            self.first_start = time.perf_counter()
+<span class="ln">226</span>        await asyncio.sleep(0.02)                     # 느린 처리 흉내
+<span class="ln">227</span>        amt = env.payload[&quot;amount&quot;]
+<span class="ln">228</span>        if amt % 13 == 0:                             # 내고장성 시연: 의도적 실패
+<span class="ln">229</span>            raise ValueError(f&quot;{amt}원은 13의 배수&quot;)
+<span class="ln">230</span>        self.count += 1
+<span class="ln">231</span>        self.total += amt
+<span class="ln">232</span>        self.worker_use[wid] = self.worker_use.get(wid, 0) + 1
+<span class="ln">233</span>        self.last_end = time.perf_counter()
+<span class="ln">234</span>        log(wid, f&quot;통계 갱신 입찰수={self.count} 평균={self.total / self.count:.1f}원&quot;)
+<span class="ln">235</span>
+<span class="ln">236</span>
+<span class="ln">237</span>class Notifier(Component):
+<span class="ln">238</span>    &quot;&quot;&quot;최고가 변경·낙찰 이벤트를 받아 알림을 보내고 NotificationSent 를 발행한다.&quot;&quot;&quot;
+<span class="ln">239</span>    def __init__(self, broker):
+<span class="ln">240</span>        super().__init__(&quot;Notifier&quot;, broker)
+<span class="ln">241</span>        self.sent = 0
+<span class="ln">242</span>        self.listen(&quot;bid.highest_changed&quot;, self.on_highest, sub_name=&quot;Notifier/highest&quot;)
+<span class="ln">243</span>        self.listen(&quot;auction.settled&quot;, self.on_settled, sub_name=&quot;Notifier/settled&quot;)
+<span class="ln">244</span>
+<span class="ln">245</span>    def _send(self, wid, text):
+<span class="ln">246</span>        self.sent += 1
+<span class="ln">247</span>        log(wid, f&quot;알림 발송: {text}&quot;)
+<span class="ln">248</span>        self.broker.publish(&quot;notification.sent&quot;, &quot;NotificationSent&quot;, {&quot;text&quot;: text})
+<span class="ln">249</span>
+<span class="ln">250</span>    async def on_highest(self, env, wid):
+<span class="ln">251</span>        self._send(wid, f&quot;새 최고가 {env.payload[&#x27;amount&#x27;]}원 ({env.payload[&#x27;bidder&#x27;]})&quot;)
+<span class="ln">252</span>
+<span class="ln">253</span>    async def on_settled(self, env, wid):
+<span class="ln">254</span>        p = env.payload
+<span class="ln">255</span>        self._send(wid, f&quot;낙찰 결과: {p[&#x27;winner&#x27;]} 님 {p[&#x27;price&#x27;]}원&quot;)
+<span class="ln">256</span>
+<span class="ln">257</span>
+<span class="ln">258</span>class Settlement(Component):
+<span class="ln">259</span>    &quot;&quot;&quot;마감 시 낙찰자를 확정한다. 최고가는 구독한 이벤트로 스스로 유지한다(BidTracker 호출 없음).&quot;&quot;&quot;
+<span class="ln">260</span>    def __init__(self, broker):
+<span class="ln">261</span>        super().__init__(&quot;Settlement&quot;, broker)
+<span class="ln">262</span>        self.my_highest: dict[str, dict] = {}
+<span class="ln">263</span>        self.result = None
+<span class="ln">264</span>        self.listen(&quot;bid.highest_changed&quot;, self.on_highest, sub_name=&quot;Settlement/highest&quot;)
+<span class="ln">265</span>        self.listen(&quot;auction.closed&quot;, self.on_closed, sub_name=&quot;Settlement/closed&quot;)
+<span class="ln">266</span>
+<span class="ln">267</span>    async def on_highest(self, env, wid):
+<span class="ln">268</span>        self.my_highest[env.payload[&quot;auction_id&quot;]] = env.payload
+<span class="ln">269</span>
+<span class="ln">270</span>    async def on_closed(self, env, wid):
+<span class="ln">271</span>        aid = env.payload[&quot;auction_id&quot;]
+<span class="ln">272</span>        top = self.my_highest.get(aid)
+<span class="ln">273</span>        if top is None:
+<span class="ln">274</span>            log(wid, f&quot;{aid} 입찰 없음 - 유찰&quot;)
+<span class="ln">275</span>            return
+<span class="ln">276</span>        self.result = {&quot;auction_id&quot;: aid, &quot;winner&quot;: top[&quot;bidder&quot;], &quot;price&quot;: top[&quot;amount&quot;]}
+<span class="ln">277</span>        log(wid, f&quot;낙찰 확정 {top[&#x27;bidder&#x27;]} {top[&#x27;amount&#x27;]}원 -&gt; AuctionSettled 발행&quot;)
+<span class="ln">278</span>        self.broker.publish(&quot;auction.settled&quot;, &quot;AuctionSettled&quot;, dict(self.result))
+<span class="ln">279</span>
+<span class="ln">280</span>
+<span class="ln">281</span>class DeadLetterMonitor(Component):
+<span class="ln">282</span>    &quot;&quot;&quot;deadletter 토픽의 이벤트를 기록한다.&quot;&quot;&quot;
+<span class="ln">283</span>    def __init__(self, broker):
+<span class="ln">284</span>        super().__init__(&quot;DeadLetterMonitor&quot;, broker)
+<span class="ln">285</span>        self.items: list[dict] = []
+<span class="ln">286</span>        self.listen(&quot;deadletter&quot;, self.handle)
+<span class="ln">287</span>
+<span class="ln">288</span>    async def handle(self, env, wid):
+<span class="ln">289</span>        self.items.append(env.payload)
+<span class="ln">290</span>        log(wid, f&quot;DLQ 수신: {env.payload[&#x27;subscription&#x27;]} / {env.payload[&#x27;error&#x27;]}&quot;)
+<span class="ln">291</span>
+<span class="ln">292</span>
+<span class="ln">293</span># ───────────────────────── 제약 검사 ─────────────────────────
+<span class="ln">294</span>def find_component_refs(obj, depth=0) -&gt; list:
+<span class="ln">295</span>    &quot;&quot;&quot;객체 안에서 Component 참조(직접·컨테이너·바운드 메서드)를 찾는다.&quot;&quot;&quot;
+<span class="ln">296</span>    if depth &gt; 4:
+<span class="ln">297</span>        return []
+<span class="ln">298</span>    if isinstance(obj, Component):
+<span class="ln">299</span>        return [obj.name]
+<span class="ln">300</span>    if hasattr(obj, &quot;__self__&quot;) and isinstance(getattr(obj, &quot;__self__&quot;), Component):
+<span class="ln">301</span>        return [obj.__self__.name]
+<span class="ln">302</span>    items = []
+<span class="ln">303</span>    if isinstance(obj, dict):
+<span class="ln">304</span>        items = list(obj.keys()) + list(obj.values())
+<span class="ln">305</span>    elif isinstance(obj, (list, tuple, set)):
+<span class="ln">306</span>        items = list(obj)
+<span class="ln">307</span>    out = []
+<span class="ln">308</span>    for it in items:
+<span class="ln">309</span>        out += find_component_refs(it, depth + 1)
+<span class="ln">310</span>    return out
+<span class="ln">311</span>
+<span class="ln">312</span>
+<span class="ln">313</span>def check_c1(components) -&gt; bool:
+<span class="ln">314</span>    &quot;&quot;&quot;C1: 컴포넌트 속성에 다른 컴포넌트 참조가 없고, 브로커만 참조함을 확인.&quot;&quot;&quot;
+<span class="ln">315</span>    ok = True
+<span class="ln">316</span>    for c in components:
+<span class="ln">317</span>        bad, n = [], 0
+<span class="ln">318</span>        for k, v in vars(c).items():
+<span class="ln">319</span>            n += 1
+<span class="ln">320</span>            refs = [r for r in find_component_refs(v) if r != c.name]
+<span class="ln">321</span>            if refs:
+<span class="ln">322</span>                bad.append((k, refs))
+<span class="ln">323</span>        has_broker = isinstance(vars(c).get(&quot;broker&quot;), EventBroker)
+<span class="ln">324</span>        status = &quot;OK&quot; if not bad and has_broker else f&quot;위반 {bad}&quot;
+<span class="ln">325</span>        ok &amp;= status == &quot;OK&quot;
+<span class="ln">326</span>        log(&quot;제약검사C1&quot;, f&quot;{c.name:&lt;17} 속성 {n}개 검사, 타 컴포넌트 참조 {sum(len(r) for _, r in bad)}, 브로커 참조 {&#x27;있음&#x27; if has_broker else &#x27;없음&#x27;} -&gt; {status}&quot;)
+<span class="ln">327</span>    # 자가검증: 검사기가 위반을 실제로 잡아내는지 확인(가짜 위반 객체 사용)
+<span class="ln">328</span>    a, b = Component(&quot;A&quot;, None), Component(&quot;B&quot;, None)
+<span class="ln">329</span>    a.peer = b
+<span class="ln">330</span>    caught = any(r != &quot;A&quot; for v in vars(a).values() for r in find_component_refs(v))
+<span class="ln">331</span>    log(&quot;제약검사C1&quot;, f&quot;검사기 자가검증(A가 B를 참조하게 만든 가짜 객체) -&gt; 위반 탐지 {&#x27;성공&#x27; if caught else &#x27;실패&#x27;}&quot;)
+<span class="ln">332</span>    ok &amp;= caught
+<span class="ln">333</span>    log(&quot;제약검사C1&quot;, &quot;결과: &quot; + (&quot;PASS&quot; if ok else &quot;FAIL&quot;))
+<span class="ln">334</span>    return ok
+<span class="ln">335</span>
+<span class="ln">336</span>
+<span class="ln">337</span>def check_c3_c4(broker, producers) -&gt; tuple[bool, bool]:
+<span class="ln">338</span>    &quot;&quot;&quot;C3: 모든 이벤트 type 이 과거형(-ed). C4: 발행자는 구독/구독자 정보를 갖지 않음.&quot;&quot;&quot;
+<span class="ln">339</span>    c3 = all(t.endswith((&quot;ed&quot;, &quot;Sent&quot;)) for t in broker.types_seen)  # Sent 도 과거형
+<span class="ln">340</span>    c4 = all(not any(isinstance(v, Subscription) for v in vars(p).values()) and not hasattr(p, &quot;subs_of&quot;)
+<span class="ln">341</span>             for p in producers)
+<span class="ln">342</span>    log(&quot;제약검사C3&quot;, f&quot;이벤트 type {sorted(broker.types_seen)} -&gt; {&#x27;PASS&#x27; if c3 else &#x27;FAIL&#x27;}&quot;)
+<span class="ln">343</span>    log(&quot;제약검사C4&quot;, f&quot;발행자는 토픽 이름만 사용, 구독자 목록 미보유 -&gt; {&#x27;PASS&#x27; if c4 else &#x27;FAIL&#x27;}&quot;)
+<span class="ln">344</span>    return c3, c4
+<span class="ln">345</span>
+<span class="ln">346</span>
+<span class="ln">347</span># ───────────────────────── 실행 ─────────────────────────
+<span class="ln">348</span>async def main() -&gt; int:
+<span class="ln">349</span>    broker = EventBroker()
+<span class="ln">350</span>    producer, clock = BidProducer(broker), AuctionClock(&quot;AuctionClock&quot;, broker)
+<span class="ln">351</span>    capture, tracker = BidCapture(broker), BidTracker(broker)
+<span class="ln">352</span>    analytics, notifier = BidAnalytics(broker), Notifier(broker)
+<span class="ln">353</span>    settle, dlq_mon = Settlement(broker), DeadLetterMonitor(broker)
+<span class="ln">354</span>    subscribers = [capture, tracker, analytics, notifier, settle, dlq_mon]
+<span class="ln">355</span>    allc = [producer, clock] + subscribers
+<span class="ln">356</span>    log(&quot;시스템&quot;, &quot;경매 시스템 시작&quot;)
+<span class="ln">357</span>    c1 = check_c1(allc)
+<span class="ln">358</span>
+<span class="ln">359</span>    pub_ms = producer.produce(&quot;A-100&quot;, 26, short_ttl_idx=(3, 11, 20))
+<span class="ln">360</span>    await broker.drain()                         # 입찰 처리가 모두 끝나면 마감(시연 순서 보장)
+<span class="ln">361</span>    clock.close(&quot;A-100&quot;)
+<span class="ln">362</span>    await broker.drain()
+<span class="ln">363</span>    c2_total = (analytics.last_end - analytics.first_start) * 1000
+<span class="ln">364</span>    log(&quot;제약검사C2&quot;, f&quot;입찰 전체 발행 {pub_ms:.3f}ms vs BidAnalytics 처리 {c2_total:.1f}ms &quot;
+<span class="ln">365</span>                      f&quot;(약 {c2_total / max(pub_ms, 1e-6):.0f}배) -&gt; 발행자는 처리 완료를 기다리지 않음&quot;)
+<span class="ln">366</span>    c3, c4 = check_c3_c4(broker, [producer, clock])
+<span class="ln">367</span>
+<span class="ln">368</span>    workers = {}
+<span class="ln">369</span>    for c in subscribers:
+<span class="ln">370</span>        workers.update(c.workers)
+<span class="ln">371</span>    broker.close(workers)
+<span class="ln">372</span>    await asyncio.gather(*(t for c in subscribers for t in c.tasks))
+<span class="ln">373</span>
+<span class="ln">374</span>    # 요약 표
+<span class="ln">375</span>    out = [&quot;&quot;, &quot;=&quot; * 70, &quot;요약&quot;, &quot;=&quot; * 70, &quot;[토픽별 발행 수]&quot;]
+<span class="ln">376</span>    out += [f&quot;  {t:&lt;22}{n:&gt;4}&quot; for t, n in broker.published.items()]
+<span class="ln">377</span>    out += [&quot;&quot;, &quot;[구독별 처리/재시도/DLQ/만료]&quot;, f&quot;  {&#x27;구독&#x27;:&lt;24}{&#x27;처리&#x27;:&gt;5}{&#x27;재시도&#x27;:&gt;6}{&#x27;DLQ&#x27;:&gt;5}{&#x27;만료&#x27;:&gt;5}&quot;]
+<span class="ln">378</span>    for ss in broker.subs.values():
+<span class="ln">379</span>        out += [f&quot;  {s.name:&lt;24}{s.processed:&gt;5}{s.retried:&gt;7}{s.dlq:&gt;5}{s.expired:&gt;5}&quot; for s in ss]
+<span class="ln">380</span>    out += [f&quot;[BidAnalytics 워커별 성공 처리] {dict(sorted(analytics.worker_use.items()))}&quot;]
+<span class="ln">381</span>    r = settle.result
+<span class="ln">382</span>    out += [f&quot;[낙찰 결과] {r[&#x27;auction_id&#x27;]} 낙찰자={r[&#x27;winner&#x27;]} 낙찰가={r[&#x27;price&#x27;]}원 (알림 {notifier.sent}건 발송)&quot; if r else &quot;[낙찰 결과] 유찰&quot;]
+<span class="ln">383</span>    out += [f&quot;[BidTracker 최고가] {tracker.highest[&#x27;A-100&#x27;][&#x27;amount&#x27;]}원 / Settlement 보유 {r[&#x27;price&#x27;] if r else &#x27;-&#x27;}원 -&gt; 일치 {r and r[&#x27;price&#x27;] == tracker.highest[&#x27;A-100&#x27;][&#x27;amount&#x27;]}&quot;]
+<span class="ln">384</span>    out += [&quot;&quot;, &quot;[제약 검사]&quot;,
+<span class="ln">385</span>            f&quot;  C1 직접 참조 없음   : {&#x27;PASS&#x27; if c1 else &#x27;FAIL&#x27;}&quot;,
+<span class="ln">386</span>            f&quot;  C2 비동기 발행      : 발행 {pub_ms:.3f}ms &lt; 분석 {c2_total:.1f}ms -&gt; {&#x27;PASS&#x27; if pub_ms &lt; c2_total else &#x27;FAIL&#x27;}&quot;,
+<span class="ln">387</span>            f&quot;  C3 과거형 이벤트    : {&#x27;PASS&#x27; if c3 else &#x27;FAIL&#x27;}&quot;,
+<span class="ln">388</span>            f&quot;  C4 발행자 익명성    : {&#x27;PASS&#x27; if c4 else &#x27;FAIL&#x27;}&quot;]
+<span class="ln">389</span>    for line in out:
+<span class="ln">390</span>        LOG.append(line)
+<span class="ln">391</span>        print(line)
+<span class="ln">392</span>    return 0
+<span class="ln">393</span>
+<span class="ln">394</span>
+<span class="ln">395</span>if __name__ == &quot;__main__&quot;:
+<span class="ln">396</span>    sys.stdout.reconfigure(encoding=&quot;utf-8&quot;)
+<span class="ln">397</span>    code = asyncio.run(main())
+<span class="ln">398</span>    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), &quot;run_log.txt&quot;)
+<span class="ln">399</span>    with open(path, &quot;w&quot;, encoding=&quot;utf-8&quot;) as f:
+<span class="ln">400</span>        f.write(&quot;\n&quot;.join(LOG) + &quot;\n&quot;)
+<span class="ln">401</span>    sys.exit(code)
+</pre>
+</body></html>
