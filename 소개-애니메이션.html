@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"></head><body>
+<title>이벤트 드리븐 경매 시스템</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@500;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
+<style>
+/* 레이아웃: 토픽을 노선도처럼 가로 선으로 깐 "이벤트 버스" 도면 하나를 무대로 삼고, 아래로 설명 절이 이어진다 */
+:root{
+  --bg:#EDF0EF; --surface:#FAFBFB; --sunk:#E2E8E5; --ink:#16201E; --muted:#56635F; --line:#C5CFCB;
+  --accent:#0E6B61; --accent-ink:#FFFFFF;
+  --broker-bg:#E0E8E5; --broker-line:#B3C3BE;
+  --c-bid:#D05A24; --c-high:#2A6CC4; --c-closed:#7246C0; --c-settled:#16855A; --c-note:#9C7A0E; --c-dlq:#C4303D;
+  --display:'Hahmlet','Noto Serif KR',serif;
+  --body:'IBM Plex Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+  --mono:'IBM Plex Mono','IBM Plex Sans KR',ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F1514; --surface:#162020; --sunk:#111918; --ink:#E2E9E6; --muted:#97A6A1; --line:#2B3936;
+    --accent:#4CC0AE; --accent-ink:#06201C; --broker-bg:#13201F; --broker-line:#2A3D3A;
+    --c-bid:#F08452; --c-high:#6AA5F2; --c-closed:#A98CF2; --c-settled:#45C08A; --c-note:#E0BE4A; --c-dlq:#F06672;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F1514; --surface:#162020; --sunk:#111918; --ink:#E2E9E6; --muted:#97A6A1; --line:#2B3936;
+  --accent:#4CC0AE; --accent-ink:#06201C; --broker-bg:#13201F; --broker-line:#2A3D3A;
+  --c-bid:#F08452; --c-high:#6AA5F2; --c-closed:#A98CF2; --c-settled:#45C08A; --c-note:#E0BE4A; --c-dlq:#F06672;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:400 15.5px/1.7 var(--body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 56px}
+.wrap{max-width:1160px;margin:0 auto}
+a{color:var(--accent)}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.3;margin:0}
+h1{font-size:clamp(30px,5vw,46px);font-weight:700;letter-spacing:-.01em}
+h2{font-size:clamp(22px,3vw,28px);font-weight:700}
+h3{font-size:18px;font-weight:700}
+p{margin:0}
+code,.mono{font-family:var(--mono);font-size:.9em}
+.eyebrow{font:600 12px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.muted{color:var(--muted)}
+
+.theme-toggle{position:fixed;z-index:20;top:calc(12px + env(safe-area-inset-top,0px));right:calc(12px + env(safe-area-inset-right,0px));
+  font:500 13px var(--body);color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:7px 14px;cursor:pointer}
+.theme-toggle:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+header.hero{padding-block:64px 28px;display:grid;gap:14px;max-width:760px}
+.hero .lede{font-size:17px;color:var(--muted);max-width:62ch}
+.hero .lede b{color:var(--ink);font-weight:600}
+
+/* 무대 */
+.stage{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px;display:grid;gap:14px;scroll-margin-top:16px}
+.controls{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg button,.ctl button{font:500 13.5px var(--body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.ctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.ctl .play{background:var(--ink);color:var(--surface);border-color:var(--ink);min-width:86px}
+.ctl .spd[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);font-weight:600}
+.caption{display:flex;gap:12px;align-items:flex-start;background:var(--bg);border-radius:10px;padding:12px 14px;min-height:64px}
+.caption .tag{flex:none;font:600 12px/1 var(--mono);padding:6px 9px;border-radius:6px;background:var(--accent);color:var(--accent-ink);margin-top:2px}
+.caption .tag.warn{background:var(--c-dlq);color:#fff}
+.caption p{min-width:0}
+.diagram{overflow-x:auto;border-radius:10px}
+#bus{display:block;width:100%;min-width:820px;height:auto}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--c-bid)}
+.legend i.hollow{background:transparent;border:2.5px solid var(--c-bid)}
+.legend i.badge{width:22px;height:14px;border-radius:7px;background:var(--surface);border:1.5px solid var(--line)}
+.kpis{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.kpis div{background:var(--surface);padding:9px 10px;min-width:0}
+.kpis dt{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpis dd{margin:0;font:600 17px/1.3 var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lower{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:14px}
+.log{background:var(--sunk);border-radius:10px;height:248px;overflow:auto;padding:10px 12px;font:12.5px/1.65 var(--mono)}
+.log .ln{display:grid;grid-template-columns:52px 136px minmax(0,1fr);gap:8px}
+.log .t{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.log .w{color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.log .bad .m{color:var(--c-dlq)}
+.log .sys .m{color:var(--muted)}
+.inspector{border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:grid;gap:8px;align-content:start}
+.inspector .kind{font:600 12px var(--mono);color:var(--muted)}
+.inspector dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 12px;margin:4px 0 0;font-size:14px}
+.inspector dt{color:var(--muted)}
+.inspector dd{margin:0;display:flex;flex-wrap:wrap;gap:5px}
+.chip{display:inline-block;font:500 12px/1.5 var(--mono);padding:1px 8px;border-radius:999px;border:1.5px solid currentColor}
+.inspector pre{margin:4px 0 0;background:var(--sunk);border-radius:8px;padding:8px 10px;font:12px/1.55 var(--mono);overflow-x:auto;white-space:pre}
+.hint{font-size:13px;color:var(--muted)}
+
+/* SVG */
+.band{fill:var(--broker-bg);stroke:var(--broker-line);stroke-width:1.5}
+.band-title{font:600 13px var(--mono);fill:var(--muted)}
+.lane-line{stroke-width:4;stroke-linecap:round}
+.lane-label{font:500 11px var(--mono);fill:var(--muted)}
+.stub line{stroke-width:2.5}
+.box{fill:var(--surface);stroke:var(--line);stroke-width:1.5;transition:stroke .2s}
+.c-name{font:600 13.5px var(--mono);fill:var(--ink)}
+.c-role{font:400 11.5px var(--body);fill:var(--muted)}
+.track{fill:var(--sunk)}
+.fill{fill:var(--accent)}
+.comp,.broker{cursor:pointer;outline:none}
+.comp.busy .box{stroke:var(--accent);stroke-width:2.5}
+.comp.fail .box{stroke:var(--c-dlq);stroke-width:3}
+.comp.sel .box,.comp:focus-visible .box{stroke:var(--accent);stroke-width:2.5}
+.broker:focus-visible .band,.broker.sel .band{stroke:var(--accent);stroke-width:2}
+.badge-r{fill:var(--surface);stroke:var(--line);stroke-width:1.2}
+.badge-t{font:600 10.5px var(--mono);fill:var(--muted)}
+.badge.on .badge-r{stroke:var(--accent);stroke-width:2}
+.badge.on .badge-t{fill:var(--ink)}
+.pk-label{font:600 10px var(--mono);fill:var(--ink);paint-order:stroke;stroke:var(--surface);stroke-width:3px}
+.fx{font:600 11px var(--body);paint-order:stroke;stroke:var(--surface);stroke-width:3px}
+#bus.dim .lane:not(.hi),#bus.dim .stub:not(.hi){opacity:.14}
+#bus.dim .comp:not(.hi){opacity:.38}
+#bus .lane,#bus .stub,#bus .comp{transition:opacity .2s}
+
+/* 설명 절 */
+section.block{padding-block:56px 0;display:grid;gap:20px}
+section.block > header{display:grid;gap:8px;max-width:720px}
+.steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;counter-reset:s}
+.steps li{counter-increment:s;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:grid;gap:8px;align-content:start;min-width:0}
+.steps li h3::before{content:counter(s) ". ";color:var(--accent);font-family:var(--mono);font-weight:600}
+.steps p{color:var(--muted);font-size:15px}
+.steps p b{color:var(--ink);font-weight:600}
+.link-btn{justify-self:start;font:500 13px var(--body);color:var(--accent);background:none;border:1px solid var(--accent);border-radius:8px;padding:5px 11px;cursor:pointer}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;display:grid;gap:12px;align-content:start;min-width:0}
+.panel pre{margin:0;background:var(--sunk);border-radius:8px;padding:12px 14px;font:13px/1.65 var(--mono);overflow-x:auto;white-space:pre}
+.env-keys{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 14px;font-size:14.5px;margin:0}
+.env-keys dt{font-family:var(--mono);font-weight:600}
+.env-keys dd{margin:0;color:var(--muted)}
+.conn-list{display:grid;gap:12px;margin:0;padding:0;list-style:none}
+.conn-list li{display:grid;gap:2px}
+.conn-list b{font-weight:600}
+.conn-list span{color:var(--muted);font-size:14.5px}
+.rules{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.rule{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:grid;gap:9px;align-content:start;min-width:0}
+.rule .top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.rule .id{font:600 13px var(--mono);color:var(--accent)}
+.pass{font:600 12px var(--mono);color:var(--c-settled);border:1.5px solid currentColor;border-radius:6px;padding:1px 7px}
+.rule p{color:var(--muted);font-size:15px}
+.rule p b{color:var(--ink);font-weight:600}
+.bars{display:grid;gap:6px;font-size:13px}
+.bars .row{display:grid;grid-template-columns:96px minmax(0,1fr) 70px;gap:8px;align-items:center}
+.bars .bar{height:10px;background:var(--sunk);border-radius:5px;overflow:hidden}
+.bars .bar i{display:block;height:100%;background:var(--accent);border-radius:5px}
+.bars .num{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+.types{display:flex;flex-wrap:wrap;gap:6px}
+.types code{background:var(--sunk);border-radius:6px;padding:2px 8px}
+.limits{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+footer.foot{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);font-size:14px;color:var(--muted);display:grid;gap:6px}
+
+@media (max-width:880px){
+  .kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .lower,.two,.steps,.rules,.limits{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:480px){
+  header.hero{padding-block:52px 20px}
+  .stage{padding:12px}
+  .log .ln{grid-template-columns:44px 104px minmax(0,1fr);gap:6px}
+}
+@media (prefers-reduced-motion:reduce){ #bus .lane,#bus .stub,#bus .comp,.box{transition:none} }
+</style>
+
+<button class="theme-toggle" id="themeBtn" type="button">다크 모드</button>
+
+<div class="wrap">
+  <header class="hero">
+    <span class="eyebrow">SW아키텍처설계 과제2 · 브로커 토폴로지</span>
+    <h1>이벤트 드리븐 경매 시스템</h1>
+    <p class="lede">컴포넌트는 서로를 부르지 않습니다. <b>일어난 일을 이벤트로 브로커에 넣고</b>, 그 토픽을 구독한 컴포넌트가 <b>각자 자기 큐에서 꺼내 처리</b>합니다. 아래 도면은 실제 코드(<code>auction_eda.py</code>)와 같은 규칙을 브라우저에서 다시 돌린 것입니다.</p>
+  </header>
+
+  <section class="stage" id="stage" aria-label="이벤트 흐름 애니메이션">
+    <div class="controls">
+      <div class="seg" role="group" aria-label="장면 고르기">
+        <button type="button" id="scn-one" data-scn="one" aria-pressed="true">입찰 한 건</button>
+        <button type="button" id="scn-fail" data-scn="fail" aria-pressed="false">실패한 입찰</button>
+        <button type="button" id="scn-full" data-scn="full" aria-pressed="false">전체 실행 (26건)</button>
+        <button type="button" id="scn-race" data-scn="race" aria-pressed="false">한계: 순서 경쟁</button>
+      </div>
+      <div class="ctl">
+        <button type="button" class="play" id="playBtn">일시정지</button>
+        <button type="button" id="restartBtn">처음부터</button>
+        <button type="button" class="spd" id="spd-1" data-spd="1" aria-pressed="true">1×</button>
+        <button type="button" class="spd" id="spd-2" data-spd="2" aria-pressed="false">2×</button>
+        <button type="button" class="spd" id="spd-4" data-spd="4" aria-pressed="false">4×</button>
+      </div>
+    </div>
+
+    <div class="caption" aria-live="polite"><span class="tag" id="capTag">준비</span><p id="capText">장면을 고르면 이벤트가 움직이기 시작합니다. 상자를 누르면 그 컴포넌트의 역할이 아래에 나옵니다.</p></div>
+
+    <div class="diagram"><svg id="bus" viewBox="0 44 1100 516" role="img" aria-label="발행자, 브로커의 토픽 6개, 구독자를 잇는 구성도"></svg></div>
+
+    <div class="legend">
+      <span><i></i>이벤트 봉투 (색 = 토픽)</span>
+      <span><i class="hollow"></i>TTL 0으로 발행된 봉투</span>
+      <span><i class="badge"></i>구독 큐에 쌓인 봉투 수</span>
+      <span>▼▲ 화살표: 발행은 선 쪽, 구독은 상자 쪽</span>
+    </div>
+
+    <dl class="kpis">
+      <div><dt>발행</dt><dd id="k-pub">0</dd></div>
+      <div><dt>처리 완료</dt><dd id="k-ok">0</dd></div>
+      <div><dt>재시도</dt><dd id="k-retry">0</dd></div>
+      <div><dt>deadletter</dt><dd id="k-dlq">0</dd></div>
+      <div><dt>만료 폐기</dt><dd id="k-exp">0</dd></div>
+      <div><dt>현재 최고가</dt><dd id="k-high">–</dd></div>
+      <div><dt>평균가</dt><dd id="k-avg">–</dd></div>
+      <div><dt>낙찰</dt><dd id="k-win">–</dd></div>
+    </dl>
+
+    <div class="lower">
+      <div class="log" id="log" aria-label="실행 로그"></div>
+      <div class="inspector" id="inspector" aria-live="polite"></div>
+    </div>
+    <p class="hint">시간은 보기 좋게 늘렸습니다. 실제 실행은 약 0.86초에 끝나고, 입찰 26건 발행은 0.344ms 걸렸습니다.</p>
+  </section>
+
+  <section class="block" id="flow">
+    <header>
+      <span class="eyebrow">동작 흐름</span>
+      <h2>입찰 하나가 낙찰이 되기까지</h2>
+      <p class="muted">실행 한 번이 지나가는 순서입니다. 버튼을 누르면 위 도면에서 그 장면을 다시 보여 줍니다.</p>
+    </header>
+    <ol class="steps">
+      <li><h3>발행</h3><p><b>BidProducer</b>가 입찰을 <code>BidPlaced</code> 봉투로 만들어 <code>bid.placed</code>에 넣고 바로 다음 입찰로 넘어갑니다. 누가 받는지, 처리가 끝났는지는 모릅니다.</p><button type="button" class="link-btn" data-go="one">이 장면 보기</button></li>
+      <li><h3>팬아웃과 경쟁 소비자</h3><p>브로커는 <code>bid.placed</code> 구독 3곳(BidCapture·BidTracker·BidAnalytics)의 큐에 <b>사본을 하나씩</b> 넣습니다. BidAnalytics 큐 하나는 <b>워커 2개가 나눠</b> 꺼냅니다(성공 #1 11건, #2 5건).</p><button type="button" class="link-btn" data-go="full">이 장면 보기</button></li>
+      <li><h3>만료 검사</h3><p>워커는 꺼낸 봉투의 TTL부터 봅니다. <code>evt-0004·0012·0021</code>은 TTL 0으로 발행돼 구독 3곳 모두에서 <b>처리 없이 폐기</b>됐습니다.</p><button type="button" class="link-btn" data-go="full">이 장면 보기</button></li>
+      <li><h3>처리 사슬</h3><p><b>BidTracker</b>는 최고가가 바뀔 때만 <code>HighestBidChanged</code>를 발행합니다. 이를 받아 Notifier는 알림을 보내고 Settlement는 최고가를 스스로 기억합니다. 최고가는 317 → 392 → 398원으로 3번 바뀌었습니다.</p><button type="button" class="link-btn" data-go="one">이 장면 보기</button></li>
+      <li><h3>실패 격리</h3><p>BidAnalytics는 13의 배수 금액에서 일부러 실패합니다. <b>3번 재시도</b>한 뒤 <code>deadletter</code>로 보내고, 같은 봉투를 받은 다른 구독자는 정상 처리합니다. 7건이 DLQ로 갔습니다.</p><button type="button" class="link-btn" data-go="fail">이 장면 보기</button></li>
+      <li><h3>마감과 낙찰</h3><p>모든 큐가 빈 뒤 <b>AuctionClock</b>이 <code>AuctionClosed</code>를 발행합니다. Settlement가 기억한 최고가로 <b>영희 398원 낙찰</b>을 확정해 <code>AuctionSettled</code>를 발행하고, Notifier가 낙찰 알림을 보냅니다.</p><button type="button" class="link-btn" data-go="full">이 장면 보기</button></li>
+    </ol>
+  </section>
+
+  <section class="block" id="connector">
+    <header>
+      <span class="eyebrow">커넥터</span>
+      <h2>컴포넌트를 잇는 것은 토픽과 봉투뿐입니다</h2>
+    </header>
+    <div class="two">
+      <div class="panel">
+        <h3>네 가지 커넥터</h3>
+        <ul class="conn-list">
+          <li><b>토픽 (이벤트 채널) 6개</b><span>bid.placed · bid.highest_changed · auction.closed · auction.settled · notification.sent · deadletter</span></li>
+          <li><b>publish / subscribe</b><span>발행은 토픽 이름만 주면 끝나고, 구독은 <code>listen()</code> 한 줄로 붙습니다.</span></li>
+          <li><b>구독별 비동기 큐</b><span>같은 토픽이라도 구독마다 <code>asyncio.Queue</code>가 따로 있어서, 느린 BidAnalytics가 BidCapture를 막지 않습니다.</span></li>
+          <li><b>JSON 봉투 어댑터</b><span>채널에는 객체가 아니라 JSON 문자열이 다닙니다. 넣을 때 <code>dumps()</code>, 꺼낼 때 <code>loads()</code>.</span></li>
+        </ul>
+<pre>broker.publish("bid.placed", "BidPlaced", payload)  # 즉시 반환
+self.listen("bid.placed", self.handle, workers=2)    # 구독 + 워커 2개</pre>
+      </div>
+      <div class="panel">
+        <h3>채널을 지나는 봉투 한 장</h3>
+<pre>{
+  "event_id": "evt-0018",
+  "type": "BidPlaced",
+  "topic": "bid.placed",
+  "timestamp": 2.1,
+  "ttl": 5000,
+  "payload": {"auction_id": "A-100",
+              "bidder": "영희", "amount": 398}
+}</pre>
+        <dl class="env-keys">
+          <dt>type</dt><dd>과거형 이름. 이미 일어난 사실만 알린다 (C3)</dd>
+          <dt>ttl</dt><dd>유효기간(ms). 지나면 구독자가 처리 없이 버린다</dd>
+          <dt>payload</dt><dd>처리에 필요한 내용 전부. 받는 쪽은 발행자에게 되묻지 않는다</dd>
+          <dt>(없음)</dt><dd>보낸 컴포넌트 이름 필드가 없다. 발행자는 익명이다 (C4)</dd>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="constraints">
+    <header>
+      <span class="eyebrow">제약조건</span>
+      <h2>네 가지 규칙을 실행할 때마다 검사합니다</h2>
+      <p class="muted">결과는 모두 run_log.txt 마지막 줄에 PASS로 남습니다.</p>
+    </header>
+    <div class="rules">
+      <div class="rule"><div class="top"><span class="id">C1 · 직접 참조 없음</span><span class="pass">PASS</span></div>
+        <p>컴포넌트 8개의 속성을 재귀로 훑어 <b>다른 컴포넌트나 그 메서드를 쥐고 있는지</b> 찾습니다. 모두 참조 0이고, 갖고 있는 것은 브로커뿐입니다. 일부러 위반한 가짜 객체로 검사기 자체도 확인합니다.</p></div>
+      <div class="rule"><div class="top"><span class="id">C2 · 비동기 발행</span><span class="pass">PASS</span></div>
+        <p>발행은 <code>put_nowait</code>로 큐에 넣고 바로 돌아옵니다. 같은 축에 그린 실제 시간입니다.</p>
+        <div class="bars" aria-label="발행 시간과 분석 처리 시간 비교">
+          <div class="row"><span>입찰 26건 발행</span><span class="bar"><i style="width:max(2px,0.04%)"></i></span><span class="num">0.344ms</span></div>
+          <div class="row"><span>BidAnalytics 처리</span><span class="bar"><i style="width:100%"></i></span><span class="num">851.7ms</span></div>
+          <span class="muted">약 2,473배 차이. 발행 막대는 너무 짧아 2px로 표시했습니다.</span>
+        </div></div>
+      <div class="rule"><div class="top"><span class="id">C3 · 과거형 이벤트</span><span class="pass">PASS</span></div>
+        <p>발행된 이벤트 type 6종이 모두 이미 일어난 일을 가리킵니다. 명령(“처리해라”)이 아니라 사실(“입찰됐다”)입니다.</p>
+        <div class="types"><code>BidPlaced</code><code>HighestBidChanged</code><code>AuctionClosed</code><code>AuctionSettled</code><code>NotificationSent</code><code>EventDeadLettered</code></div></div>
+      <div class="rule"><div class="top"><span class="id">C4 · 발행자 익명성</span><span class="pass">PASS</span></div>
+        <p>발행자는 토픽 이름만 알고 구독 목록을 갖지 않습니다. 그래서 <code>notification.sent</code>처럼 <b>구독자가 0인 토픽</b>에 발행해도 Notifier는 아무 문제 없이 동작합니다.</p></div>
+    </div>
+  </section>
+
+  <section class="block" id="limits">
+    <header>
+      <span class="eyebrow">한계</span>
+      <h2>이 구조가 대신 내주는 것</h2>
+    </header>
+    <div class="limits">
+      <div class="panel"><h3>흐름 제어와 순서 보장이 없음</h3>
+        <p class="muted">브로커는 토픽 사이의 순서를 모릅니다. 실제 실행은 <code>drain()</code>으로 모든 큐가 빌 때까지 기다린 뒤 마감해 순서를 맞췄습니다. 이 대기를 빼고 BidTracker를 10ms 늦추면, 마감이 최고가보다 먼저 처리돼 유찰이 됩니다. 독립 테스트에서 실제로 재현했습니다.</p>
+        <button type="button" class="link-btn" data-go="race">도면에서 재현하기</button></div>
+      <div class="panel"><h3>복구성이 낮음</h3>
+        <p class="muted">큐가 프로세스 메모리(<code>asyncio.Queue</code>)에만 있어서, 프로그램이 죽으면 처리 전 봉투가 모두 사라집니다. 실제 서비스라면 디스크에 남기는 영속 브로커와 처리 확인(ack) 기록이 필요합니다.</p></div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span>SW아키텍처설계 과제2 · 수치는 <code>run_log.txt</code>(SEED 20261025) 기준입니다.</span>
+    <span>소스와 보고서: <a href="https://github.com/Daejin8753/JBNU-SW_Architecture-HW2" target="_blank" rel="noopener">github.com/Daejin8753/JBNU-SW_Architecture-HW2</a></span>
+  </footer>
+</div>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const NS = 'http://www.w3.org/2000/svg';
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ── 테마 버튼 ── */
+const root = document.documentElement, themeBtn = $('#themeBtn');
+try { const s = localStorage.getItem('eda-theme'); if (s === 'dark' || s === 'light') root.dataset.theme = s; } catch (e) {}
+const isDark = () => root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+const themeLabel = () => { themeBtn.textContent = isDark() ? '라이트 모드' : '다크 모드'; };
+themeBtn.addEventListener('click', () => {
+  root.dataset.theme = isDark() ? 'light' : 'dark';
+  try { localStorage.setItem('eda-theme', root.dataset.theme); } catch (e) {}
+  themeLabel();
+});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeLabel);
+themeLabel();
+
+/* ── 도면 정의 (코드의 토픽·구독 등록 순서 그대로) ── */
+const LANES = [
+  { t: 'auction.closed', y: 236, c: '--c-closed' },
+  { t: 'bid.placed', y: 266, c: '--c-bid' },
+  { t: 'bid.highest_changed', y: 296, c: '--c-high' },
+  { t: 'auction.settled', y: 326, c: '--c-settled' },
+  { t: 'notification.sent', y: 356, c: '--c-note' },
+  { t: 'deadletter', y: 386, c: '--c-dlq' },
+];
+const LANE = Object.fromEntries(LANES.map(l => [l.t, l]));
+const COMPS = {
+  BidProducer:       { row: 'top', cx: 260,  w: 150, role: '발행자' },
+  AuctionClock:      { row: 'top', cx: 445,  w: 150, role: '발행자' },
+  BidTracker:        { row: 'top', cx: 640,  w: 150, role: '구독자 · 발행' },
+  Settlement:        { row: 'top', cx: 830,  w: 150, role: '구독자 · 발행' },
+  Notifier:          { row: 'top', cx: 1000, w: 140, role: '구독자 · 발행' },
+  BidCapture:        { row: 'bot', cx: 300,  w: 150, role: '구독자' },
+  BidAnalytics:      { row: 'bot', cx: 520,  w: 190, role: '구독자 · 워커 2개' },
+  DeadLetterMonitor: { row: 'bot', cx: 780,  w: 190, role: '구독자' },
+};
+const PUBS = [
+  ['BidProducer', 'bid.placed', 260],
+  ['AuctionClock', 'auction.closed', 445],
+  ['BidTracker', 'bid.highest_changed', 665],
+  ['Settlement', 'auction.settled', 858],
+  ['Notifier', 'notification.sent', 1030],
+  ['BidAnalytics', 'deadletter', 575],
+];
+const SUBS = [
+  { id: 'BidCapture', comp: 'BidCapture', topic: 'bid.placed', x: 300, workers: 1, dur: 170 },
+  { id: 'BidTracker', comp: 'BidTracker', topic: 'bid.placed', x: 615, workers: 1, dur: 170 },
+  { id: 'BidAnalytics', comp: 'BidAnalytics', topic: 'bid.placed', x: 470, workers: 2, dur: 560 },
+  { id: 'Notifier/highest', comp: 'Notifier', topic: 'bid.highest_changed', x: 970, workers: 1, dur: 150 },
+  { id: 'Notifier/settled', comp: 'Notifier', topic: 'auction.settled', x: 1000, workers: 1, dur: 150 },
+  { id: 'Settlement/highest', comp: 'Settlement', topic: 'bid.highest_changed', x: 802, workers: 1, dur: 130 },
+  { id: 'Settlement/closed', comp: 'Settlement', topic: 'auction.closed', x: 830, workers: 1, dur: 130 },
+  { id: 'DeadLetterMonitor', comp: 'DeadLetterMonitor', topic: 'deadletter', x: 780, workers: 1, dur: 170 },
+];
+const SUBS_OF = {};
+LANES.forEach(l => { SUBS_OF[l.t] = SUBS.filter(s => s.topic === l.t); });
+const boxY = c => c.row === 'top' ? 70 : 465;
+const edgeY = c => c.row === 'top' ? 135 : 465;
+
+const INFO = {
+  EventBroker: { kind: '브로커', does: '토픽 6개와 구독 목록을 관리합니다. 받은 봉투를 그 토픽의 구독 큐마다 하나씩 복사해 넣고 바로 돌아옵니다. 봉투 내용은 보지 않고, 비즈니스 로직이 없습니다.', sub: [], pub: [], code: 'for sub in self.subs[topic]:\n    sub.queue.put_nowait(raw)' },
+  BidProducer: { kind: '발행자', does: '입찰자의 입찰을 BidPlaced 봉투로 만들어 발행만 합니다. 처리 결과를 기다리지 않습니다. 26건 중 3건은 TTL 0으로, 2건은 13의 배수로 일부러 만듭니다.', sub: [], pub: ['bid.placed'], code: 'broker.publish("bid.placed", "BidPlaced", {...})' },
+  AuctionClock: { kind: '발행자', does: '마감 시각에 AuctionClosed를 발행합니다. 누가 마감을 처리하는지 모릅니다.', sub: [], pub: ['auction.closed'], code: 'broker.publish("auction.closed", "AuctionClosed", {"auction_id": aid})' },
+  BidCapture: { kind: '구독자', does: '입찰을 기록합니다. 가장 빠른 구독자라 약 2.3ms에 23건을 모두 처리했습니다.', sub: ['bid.placed'], pub: [], code: 'self.listen("bid.placed", self.handle)' },
+  BidTracker: { kind: '구독자 · 발행', does: '최고가를 추적합니다. 더 큰 금액이 들어올 때만 HighestBidChanged를 발행합니다. 처리 결과가 다시 이벤트가 되는 처리 사슬의 시작점입니다.', sub: ['bid.placed'], pub: ['bid.highest_changed'], code: 'if cur is None or p["amount"] > cur["amount"]:\n    broker.publish("bid.highest_changed", ...)' },
+  BidAnalytics: { kind: '구독자 · 워커 2개', does: '입찰 수와 평균가를 구하는 느린 통계입니다. 워커 2개가 큐 하나를 나눠 꺼냅니다(경쟁 소비자). 13의 배수 금액에서 일부러 실패해 재시도 3회 뒤 deadletter로 보냅니다.', sub: ['bid.placed'], pub: ['deadletter'], code: 'self.listen("bid.placed", self.handle, workers=2)' },
+  Notifier: { kind: '구독자 · 발행', does: '최고가 변경과 낙찰을 알립니다. 알림마다 NotificationSent를 발행하지만 이 토픽은 구독자가 없습니다. Notifier는 그 사실을 모르고, 몰라도 됩니다.', sub: ['bid.highest_changed', 'auction.settled'], pub: ['notification.sent'], code: 'self.listen("bid.highest_changed", self.on_highest, ...)\nself.listen("auction.settled", self.on_settled, ...)' },
+  Settlement: { kind: '구독자 · 발행', does: '마감 때 낙찰자를 확정합니다. BidTracker에게 묻지 않고, 구독한 HighestBidChanged로 최고가를 스스로 기억합니다(C1).', sub: ['bid.highest_changed', 'auction.closed'], pub: ['auction.settled'], code: 'self.my_highest[aid] = env.payload   # 직접 기억\n...\nbroker.publish("auction.settled", ...)' },
+  DeadLetterMonitor: { kind: '구독자', does: '재시도를 모두 실패한 봉투를 받아 기록합니다. 실패한 구독 이름과 원인이 봉투에 들어 있습니다.', sub: ['deadletter'], pub: [], code: 'self.listen("deadletter", self.handle)' },
+};
+
+/* ── SVG 그리기 ── */
+const svg = $('#bus');
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+const gBand = el('g', { class: 'broker', tabindex: '0', role: 'button', 'aria-label': 'EventBroker 설명 보기' }, svg);
+el('rect', { x: 20, y: 200, width: 1060, height: 214, rx: 14, class: 'band' }, gBand);
+el('text', { x: 1066, y: 405, 'text-anchor': 'end', class: 'band-title' }, gBand).textContent = 'EventBroker · 토픽 6개 · 전달만 함';
+const gLanes = el('g', {}, svg), gStubs = el('g', {}, svg), gComps = el('g', {}, svg), gFx = el('g', {}, svg), gPk = el('g', {}, svg);
+
+LANES.forEach(l => {
+  const g = el('g', { class: 'lane', 'data-topic': l.t }, gLanes);
+  el('line', { x1: 30, x2: 1070, y1: l.y, y2: l.y, class: 'lane-line', style: `stroke:var(${l.c})` }, g);
+  el('text', { x: 34, y: l.y - 7, class: 'lane-label' }, g).textContent = l.t + (SUBS_OF[l.t].length ? '' : '  · 구독자 0');
+});
+function tri(g, x, y, down, c) {
+  const d = down ? `M${x - 5},${y - 4}L${x + 5},${y - 4}L${x},${y + 5}Z` : `M${x - 5},${y + 4}L${x + 5},${y + 4}L${x},${y - 5}Z`;
+  el('path', { d, style: `fill:var(${c})` }, g);
+}
+function stub(comp, topic, x, kind) {
+  const c = COMPS[comp], L = LANE[topic], y0 = edgeY(c), top = c.row === 'top';
+  const g = el('g', { class: 'stub', 'data-comp': comp, 'data-topic': topic }, gStubs);
+  el('line', { x1: x, x2: x, y1: y0, y2: L.y, style: `stroke:var(${L.c})` }, g);
+  el('circle', { cx: x, cy: L.y, r: 4.5, style: `fill:var(${L.c})` }, g);
+  const down = top === (kind === 'pub');
+  const ay = kind === 'pub' ? L.y + (top ? -13 : 13) : y0 + (top ? 31 : -31);
+  tri(g, x, ay, down, L.c);
+  return g;
+}
+PUBS.forEach(([comp, topic, x]) => stub(comp, topic, x, 'pub'));
+SUBS.forEach(s => {
+  const c = COMPS[s.comp];
+  stub(s.comp, s.topic, s.x, 'sub');
+  const by = c.row === 'top' ? edgeY(c) + 14 : edgeY(c) - 14;
+  const g = el('g', { class: 'badge' }, gStubs);
+  el('rect', { x: s.x - 12, y: by - 8, width: 24, height: 16, rx: 8, class: 'badge-r' }, g);
+  s.badgeT = el('text', { x: s.x, y: by + 4, 'text-anchor': 'middle', class: 'badge-t' }, g);
+  s.badgeT.textContent = '0';
+  s.badge = g;
+});
+for (const [name, c] of Object.entries(COMPS)) {
+  const x = c.cx - c.w / 2, y = boxY(c), h = 65;
+  const g = el('g', { class: 'comp', 'data-comp': name, tabindex: '0', role: 'button', 'aria-label': name + ' 설명 보기' }, gComps);
+  el('rect', { x, y, width: c.w, height: h, rx: 9, class: 'box' }, g);
+  el('text', { x: c.cx, y: y + 25, 'text-anchor': 'middle', class: 'c-name' }, g).textContent = name;
+  c.roleEl = el('text', { x: c.cx, y: y + 43, 'text-anchor': 'middle', class: 'c-role' }, g);
+  c.roleEl.textContent = c.role;
+  const n = name === 'BidAnalytics' ? 2 : 1, bw = (c.w - 28 - (n - 1) * 10) / n;
+  c.bars = [];
+  for (let i = 0; i < n; i++) {
+    const bx = x + 14 + i * (bw + 10), byy = y + h - 13;
+    el('rect', { x: bx, y: byy, width: bw, height: 4, rx: 2, class: 'track' }, g);
+    c.bars.push({ el: el('rect', { x: bx, y: byy, width: 0, height: 4, rx: 2, class: 'fill' }, g), w: bw, on: false, start: 0, dur: 1 });
+  }
+  c.g = g;
+}
+
+/* ── 하이라이트 · 인스펙터 ── */
+const topicsOf = name => name === 'EventBroker' ? LANES.map(l => l.t)
+  : [...PUBS.filter(p => p[0] === name).map(p => p[1]), ...SUBS.filter(s => s.comp === name).map(s => s.topic)];
+function highlight(name) {
+  if (!name) { svg.classList.remove('dim'); svg.querySelectorAll('.hi').forEach(e => e.classList.remove('hi')); return; }
+  const ts = topicsOf(name);
+  svg.classList.add('dim');
+  svg.querySelectorAll('.lane').forEach(e => e.classList.toggle('hi', ts.includes(e.dataset.topic)));
+  svg.querySelectorAll('.stub').forEach(e => e.classList.toggle('hi', name === 'EventBroker' || e.dataset.comp === name));
+  svg.querySelectorAll('.comp').forEach(e => {
+    const other = e.dataset.comp;
+    e.classList.toggle('hi', name === 'EventBroker' || other === name);
+  });
+}
+function topicChip(t) { return `<span class="chip" style="color:var(${LANE[t].c})">${t}</span>`; }
+function inspect(name) {
+  const i = INFO[name];
+  svg.querySelectorAll('.sel').forEach(e => e.classList.remove('sel'));
+  (name === 'EventBroker' ? gBand : COMPS[name].g).classList.add('sel');
+  const none = '<span class="muted">없음</span>';
+  $('#inspector').innerHTML = `<span class="kind">${i.kind}</span><h3>${name}</h3><p>${i.does}</p>
+    <dl><dt>구독</dt><dd>${i.sub.length ? i.sub.map(topicChip).join('') : none}</dd>
+    <dt>발행</dt><dd>${i.pub.length ? i.pub.map(topicChip).join('') : none}</dd></dl>
+    <pre>${i.code.replace(/</g, '&lt;')}</pre>`;
+}
+const targets = [[gBand, 'EventBroker'], ...Object.entries(COMPS).map(([n, c]) => [c.g, n])];
+targets.forEach(([g, n]) => {
+  g.addEventListener('mouseenter', () => highlight(n));
+  g.addEventListener('mouseleave', () => highlight(null));
+  g.addEventListener('focus', () => highlight(n));
+  g.addEventListener('blur', () => highlight(null));
+  g.addEventListener('click', e => { e.stopPropagation(); inspect(n); });
+  g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inspect(n); } });
+});
+inspect('EventBroker');
+
+/* ── 시뮬레이션 ── */
+const BIDS = [['영희',317],['영희',294],['지영',215],['민수',0,1],['민수',392],['민수',327],['철수',143],['지영',309],['영희',286],['하준',173],['영희',169],['지영',0,1],['하준',273],['철수',325],['지영',299],['지영',143],['영희',283],['영희',398],['민수',142],['철수',347],['하준',0,1],['지영',122],['하준',131],['민수',151],['철수',116],['지영',231]];
+// TTL 0 입찰 3건의 금액은 처리되지 않아 결과에 영향이 없으므로 실제 값 대신 표시용 값을 둔다
+BIDS.forEach(b => { if (b[2]) b[1] = 200; });
+const MSG = {
+  publish: ['C2 · 발행', '발행자는 봉투를 브로커에 넣고 바로 돌아갑니다. 누가 받는지도, 처리가 끝났는지도 모릅니다.'],
+  fanout: ['팬아웃', '브로커가 bid.placed 구독 3곳의 큐에 사본을 하나씩 넣습니다. 상자 앞 숫자가 각 큐에 쌓인 봉투 수입니다.'],
+  expired: ['TTL', 'TTL이 지난 봉투는 꺼내자마자 처리 없이 버립니다. 구독 3곳이 각자 버립니다.'],
+  highest: ['처리 사슬', 'BidTracker가 처리 결과를 새 이벤트 HighestBidChanged로 발행합니다. 이 봉투를 Notifier와 Settlement가 각자 받습니다.'],
+  nosub: ['C4 · 익명성', 'notification.sent는 구독자가 0입니다. 봉투는 아무 데도 가지 않고, Notifier는 그 사실을 몰라도 됩니다.'],
+  compete: ['경쟁 소비자', 'BidAnalytics는 워커 2개가 큐 하나를 나눠 꺼냅니다. 상자 안 막대 두 개가 각 워커입니다.'],
+  backlog: ['느린 구독자', 'BidAnalytics 큐에만 봉투가 쌓입니다. 다른 구독자는 이미 끝났지만, 구독마다 큐가 따로라 서로 막지 않습니다.'],
+  retry: ['재시도', 'BidAnalytics가 실패했습니다. 같은 봉투를 최대 3번 다시 처리해 봅니다.'],
+  dlq: ['deadletter', '3번 모두 실패한 봉투를 deadletter 토픽으로 보냅니다. 같은 입찰을 받은 다른 구독자는 영향을 받지 않았습니다.'],
+  close: ['마감', '모든 큐가 빈 뒤 AuctionClock이 AuctionClosed를 발행합니다.'],
+  settled: ['낙찰', 'Settlement가 스스로 기억한 최고가로 낙찰을 확정하고 AuctionSettled를 발행합니다.'],
+  race: ['한계', '마감 봉투가 최고가 봉투보다 먼저 Settlement에 도착했습니다. Settlement가 아는 최고가가 아직 없습니다.'],
+};
+const SCN = {
+  one: { pace: 0.36, labels: true,
+    intro: ['시작', '영희의 398원 입찰 한 건이 시스템을 어떻게 지나가는지 따라갑니다.'],
+    start() { at(500, () => bid('영희', 398)); whenIdle(() => at(700, close)); },
+    end: () => ['끝', `처리 ${S.k.ok}번, 발행 ${S.k.pub}번이 일어났습니다. 컴포넌트끼리 직접 부른 적은 한 번도 없습니다.`] },
+  fail: { pace: 0.36, labels: true,
+    intro: ['시작', '철수의 143원 입찰은 13의 배수라 BidAnalytics에서 실패합니다. 실패가 어디까지 번지는지 봅니다.'],
+    start() { at(500, () => bid('철수', 143)); },
+    end: () => ['끝', 'BidAnalytics만 실패해 deadletter로 갔습니다. BidCapture와 BidTracker는 같은 입찰을 정상 처리했습니다.'] },
+  full: { pace: 0.6, labels: false,
+    intro: ['시작', '실제 실행과 같은 입찰 26건(그중 3건은 TTL 0)을 차례로 발행합니다. 2× 이상으로 보면 편합니다.'],
+    start() { BIDS.forEach((b, i) => at(400 + i * 150, () => bid(b[0], b[1], !!b[2]))); whenIdle(() => at(700, close)); },
+    end: () => ['끝', `낙찰 ${S.win || '-'}, deadletter ${S.k.dlq}건, 만료 ${S.k.exp}건, 평균 ${S.cnt ? (S.sum / S.cnt).toFixed(1) : '-'}원. run_log.txt 결과와 같습니다.`] },
+  race: { pace: 0.36, labels: true, slowTracker: true,
+    intro: ['한계', 'BidTracker가 10배 느리다고 가정하고, 큐가 비기를 기다리지 않고 바로 마감합니다.'],
+    start() { at(500, () => bid('영희', 398)); at(620, close); },
+    end: () => ['유찰', '마감이 최고가보다 먼저 처리돼 입찰이 있었는데도 유찰됐습니다. 브로커는 토픽 사이 순서를 보장하지 않습니다.'] },
+};
+
+let S = null, scnKey = 'one', speed = 1, playing = true;
+function at(delay, fn) { S.tasks.push({ at: S.t + delay, fn, seq: S.taskSeq++ }); }
+function whenIdle(fn) { S.waiters.push(fn); }
+const fmt = t => (t / 1000).toFixed(1) + 's';
+function log(who, msg, cls) {
+  const box = $('#log'), d = document.createElement('div');
+  d.className = 'ln' + (cls ? ' ' + cls : '');
+  d.innerHTML = `<span class="t">${fmt(S.t)}</span><span class="w"></span><span class="m"></span>`;
+  d.children[1].textContent = who; d.children[2].textContent = msg;
+  box.appendChild(d);
+  while (box.children.length > 220) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+function showCap(c) { $('#capTag').textContent = c[0]; $('#capTag').classList.toggle('warn', c[0] === '한계' || c[0] === '유찰' || c[0] === 'deadletter'); $('#capText').textContent = c[1]; }
+function cap(c, now) { if (now) { S.capQ = []; S.capAt = S.t; showCap(c); } else S.capQ.push(c); }
+function narrate(key) { if (S.said.has(key)) return; S.said.add(key); cap(MSG[key]); }
+function kpi() {
+  $('#k-pub').textContent = S.k.pub; $('#k-ok').textContent = S.k.ok; $('#k-retry').textContent = S.k.retry;
+  $('#k-dlq').textContent = S.k.dlq; $('#k-exp').textContent = S.k.exp;
+  $('#k-high').textContent = S.best ? S.best.amount + '원' : '–';
+  $('#k-avg').textContent = S.cnt ? (S.sum / S.cnt).toFixed(1) + '원' : '–';
+  $('#k-win').textContent = S.win || '–';
+}
+function badge(s) { s.badgeT.textContent = s.q.length; s.badge.classList.toggle('on', s.q.length > 0); }
+function fxText(x, y, text, c) {
+  const t = el('text', { x, y, 'text-anchor': 'middle', class: 'fx', style: `fill:var(${c})` }, gFx);
+  t.textContent = text;
+  S.fx.push({ el: t, y, start: S.t, dur: 1100 });
+}
+const labelOf = (type, p) => ({ BidPlaced: p.amount + '원', HighestBidChanged: '최고 ' + p.amount, AuctionClosed: '마감', AuctionSettled: '낙찰', NotificationSent: '알림', EventDeadLettered: 'DLQ' })[type];
+
+function movePacket(pts, c, label, hollow, onArrive) {
+  const g = el('g', {}, gPk);
+  el('circle', { r: 6.5, style: hollow ? `fill:var(--surface);stroke:var(${c});stroke-width:2.5` : `fill:var(${c});stroke:var(--surface);stroke-width:2` }, g);
+  if (label && S.labels) el('text', { y: -11, 'text-anchor': 'middle', class: 'pk-label' }, g).textContent = label;
+  const lens = [];
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) { const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); lens.push(l); total += l; }
+  const p = { g, pts, lens, total, start: S.t, dur: reduce ? 60 : Math.max(140, total / S.pace), onArrive };
+  place(p, 0);
+  S.packets.push(p);
+}
+function place(p, f) {
+  let d = f * p.total, i = 0;
+  while (i < p.lens.length - 1 && d > p.lens[i]) { d -= p.lens[i]; i++; }
+  const a = p.pts[i], b = p.pts[i + 1], r = p.lens[i] ? Math.min(1, d / p.lens[i]) : 1;
+  p.g.setAttribute('transform', `translate(${a[0] + (b[0] - a[0]) * r},${a[1] + (b[1] - a[1]) * r})`);
+}
+
+function publish(comp, topic, type, payload, ttl0) {
+  const x = PUBS.find(p => p[0] === comp && p[1] === topic)[2], c = COMPS[comp], L = LANE[topic];
+  const env = { id: 'evt-' + String(++S.seq).padStart(4, '0'), type, topic, payload, ttl0: !!ttl0 };
+  S.k.pub++; kpi();
+  const label = labelOf(type, payload);
+  movePacket([[x, edgeY(c)], [x, L.y]], L.c, label, ttl0, () => {
+    const subs = SUBS_OF[topic];
+    if (!subs.length) { fxText(x, L.y - 12, '구독자 없음', '--muted'); narrate('nosub'); return; }
+    if (topic === 'bid.placed') narrate('fanout');
+    subs.forEach(s => movePacket([[x, L.y], [s.x, L.y], [s.x, edgeY(COMPS[s.comp])]], L.c, label, ttl0, () => enqueue(s, env)));
+  });
+}
+function enqueue(s, env) {
+  s.q.push(env); badge(s);
+  if (s.id === 'BidAnalytics' && s.q.length >= 6) narrate('backlog');
+  pump(s);
+}
+const wid = (s, w) => s.workers > 1 ? `${s.comp}#${w.i + 1}` : s.comp;
+function setBar(s, w, dur) { const b = COMPS[s.comp].bars[Math.min(w.i, COMPS[s.comp].bars.length - 1)]; b.on = true; b.start = S.t; b.dur = dur; COMPS[s.comp].g.classList.add('busy'); }
+function clearBar(s, w) {
+  const c = COMPS[s.comp], b = c.bars[Math.min(w.i, c.bars.length - 1)];
+  b.on = false; b.el.setAttribute('width', 0);
+  if (!SUBS.some(o => o.comp === s.comp && o.w.some(x => x.busy))) c.g.classList.remove('busy');
+}
+function flashFail(comp) { const g = COMPS[comp].g; g.classList.add('fail'); setTimeout(() => g.classList.remove('fail'), 450); }
+function pump(s) {
+  for (const w of s.w) {
+    if (w.busy || !s.q.length) continue;
+    const env = s.q.shift(); badge(s); w.busy = true;
+    if (env.ttl0) {
+      if (!S.expIds.has(env.id)) { S.expIds.add(env.id); S.k.exp++; kpi(); }
+      log(wid(s, w), `만료로 폐기 ${env.id} ${env.type} (ttl=0ms)`, 'sys');
+      fxText(s.x, COMPS[s.comp].row === 'top' ? 182 : 426, '만료 폐기', '--muted');
+      narrate('expired');
+      at(90, () => { w.busy = false; pump(s); });
+      continue;
+    }
+    attempt(s, w, env, 0);
+  }
+  if (s.workers > 1 && s.w.every(w => w.busy)) narrate('compete');
+}
+function attempt(s, w, env, n) {
+  const dur = s.dur * (S.slowTracker && s.id === 'BidTracker' ? 10 : 1);
+  setBar(s, w, dur);
+  at(dur, () => {
+    const done = () => { w.busy = false; clearBar(s, w); pump(s); };
+    try {
+      HANDLERS[s.id](env, wid(s, w), s);
+      S.k.ok++; kpi(); done();
+    } catch (e) {
+      const ty = COMPS[s.comp].row === 'top' ? 60 : 552;
+      if (n < 3) {
+        S.k.retry++; kpi();
+        log(wid(s, w), `실패(${e.message}) -> 재시도 ${n + 1}/3 ${env.id}`, 'bad');
+        flashFail(s.comp); fxText(COMPS[s.comp].cx, ty, `재시도 ${n + 1}/3`, '--c-dlq');
+        narrate('retry');
+        clearBar(s, w); w.busy = true;
+        at(160, () => attempt(s, w, env, n + 1));
+        return;
+      }
+      S.k.dlq++; kpi();
+      log(wid(s, w), `재시도 초과 -> deadletter 전송 ${env.id}`, 'bad');
+      narrate('dlq');
+      publish(s.comp, 'deadletter', 'EventDeadLettered', { subscription: s.id, error: e.message });
+      done();
+    }
+  });
+}
+const HANDLERS = {
+  BidCapture(env, w) { log(w, `입찰 기록 ${env.payload.bidder} ${env.payload.amount}원`); },
+  BidTracker(env, w) {
+    const p = env.payload;
+    if (!S.best || p.amount > S.best.amount) {
+      S.best = p; kpi();
+      log(w, `최고가 갱신 ${p.bidder} ${p.amount}원 -> HighestBidChanged 발행`);
+      narrate('highest');
+      publish('BidTracker', 'bid.highest_changed', 'HighestBidChanged', { ...p });
+    }
+  },
+  BidAnalytics(env, w) {
+    const a = env.payload.amount;
+    if (a % 13 === 0) throw new Error(`${a}원은 13의 배수`);
+    S.cnt++; S.sum += a; kpi();
+    log(w, `통계 갱신 입찰수=${S.cnt} 평균=${(S.sum / S.cnt).toFixed(1)}원`);
+  },
+  'Notifier/highest'(env, w) { send(w, `새 최고가 ${env.payload.amount}원 (${env.payload.bidder})`); },
+  'Notifier/settled'(env, w) { send(w, `낙찰 결과: ${env.payload.winner} 님 ${env.payload.price}원`); },
+  'Settlement/highest'(env, w) {
+    S.my = env.payload;
+    if (S.closed) { log(w, `마감 뒤 도착한 최고가 ${env.payload.amount}원 - 결과에 반영되지 않음 (설명용 표시)`, 'bad'); fxText(COMPS.Settlement.cx, 60, '이미 마감', '--c-dlq'); }
+    else fxText(COMPS.Settlement.cx, 60, `기억 ${env.payload.amount}원`, '--c-high');
+  },
+  'Settlement/closed'(env, w) {
+    S.closed = true;
+    if (!S.my) { log(w, 'A-100 입찰 없음 - 유찰', 'bad'); S.win = '유찰'; kpi(); flashFail('Settlement'); narrate('race'); return; }
+    S.win = `${S.my.bidder} ${S.my.amount}원`; kpi();
+    log(w, `낙찰 확정 ${S.my.bidder} ${S.my.amount}원 -> AuctionSettled 발행`);
+    narrate('settled');
+    publish('Settlement', 'auction.settled', 'AuctionSettled', { auction_id: 'A-100', winner: S.my.bidder, price: S.my.amount });
+  },
+  DeadLetterMonitor(env, w) { log(w, `DLQ 수신: ${env.payload.subscription} / ${env.payload.error}`); },
+};
+function send(w, text) { log(w, `알림 발송: ${text}`); publish('Notifier', 'notification.sent', 'NotificationSent', { text }); }
+function bid(bidder, amount, ttl0) {
+  log('BidProducer', `BidPlaced 발행 ${ttl0 ? '(TTL 0)' : bidder + ' ' + amount + '원'} -> 바로 반환`, ttl0 ? 'sys' : '');
+  narrate('publish');
+  publish('BidProducer', 'bid.placed', 'BidPlaced', { auction_id: 'A-100', bidder, amount }, ttl0);
+}
+function close() {
+  log('AuctionClock', 'A-100 경매 마감 -> AuctionClosed 발행');
+  narrate('close');
+  publish('AuctionClock', 'auction.closed', 'AuctionClosed', { auction_id: 'A-100' });
+}
+
+function reset(key) {
+  scnKey = key;
+  const sc = SCN[key];
+  gPk.replaceChildren(); gFx.replaceChildren(); $('#log').replaceChildren();
+  S = { t: 0, tasks: [], taskSeq: 0, waiters: [], packets: [], fx: [], seq: 0, k: { pub: 0, ok: 0, retry: 0, dlq: 0, exp: 0 },
+    expIds: new Set(), said: new Set(), capQ: [], capAt: 0, best: null, cnt: 0, sum: 0, my: null, closed: false, win: null,
+    labels: sc.labels, pace: sc.pace, slowTracker: !!sc.slowTracker, done: false };
+  SUBS.forEach(s => { s.q = []; s.w = Array.from({ length: s.workers }, (_, i) => ({ i, busy: false })); badge(s); });
+  for (const c of Object.values(COMPS)) { c.bars.forEach(b => { b.on = false; b.el.setAttribute('width', 0); }); c.g.classList.remove('busy', 'fail'); }
+  COMPS.BidTracker.roleEl.textContent = S.slowTracker ? '처리 10배 느림 가정' : COMPS.BidTracker.role;
+  document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.scn === key)));
+  kpi();
+  log('시스템', `장면 시작: ${document.querySelector(`[data-scn="${key}"]`).textContent}`, 'sys');
+  cap(sc.intro, true);
+  sc.start();
+  setPlaying(true);
+}
+function idle() { return !S.packets.length && !S.tasks.length && SUBS.every(s => !s.q.length); }
+function step(dt) {
+  S.t += dt;
+  const arrived = [];
+  S.packets = S.packets.filter(p => {
+    const f = (S.t - p.start) / p.dur;
+    if (f >= 1) { p.g.remove(); arrived.push(p); return false; }
+    place(p, f); return true;
+  });
+  arrived.forEach(p => p.onArrive());
+  for (;;) {
+    let bi = -1;
+    S.tasks.forEach((tk, i) => { if (tk.at <= S.t && (bi < 0 || tk.at < S.tasks[bi].at || (tk.at === S.tasks[bi].at && tk.seq < S.tasks[bi].seq))) bi = i; });
+    if (bi < 0) break;
+    const tk = S.tasks.splice(bi, 1)[0];
+    tk.fn();
+  }
+  if (idle() && S.waiters.length) { const ws = S.waiters.splice(0); ws.forEach(f => f()); }
+  if (!S.done && idle() && !S.waiters.length) {
+    S.done = true;
+    cap(SCN[scnKey].end());
+    log('시스템', '장면 끝', 'sys');
+  }
+}
+function render() {
+  for (const c of Object.values(COMPS)) c.bars.forEach(b => { if (b.on) b.el.setAttribute('width', b.w * Math.min(1, (S.t - b.start) / b.dur)); });
+  S.fx = S.fx.filter(f => {
+    const r = (S.t - f.start) / f.dur;
+    if (r >= 1) { f.el.remove(); return false; }
+    f.el.setAttribute('y', f.y - 16 * r); f.el.style.opacity = String(1 - r * r); return true;
+  });
+  if (S.capQ.length && S.t - S.capAt >= 2600) { S.capAt = S.t; showCap(S.capQ.shift()); }
+}
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(50, now - last); last = now;
+  if (playing) {
+    if (S.done && !S.capQ.length && !S.fx.length) setPlaying(false, true);
+    else step(dt * speed);
+  }
+  render();
+  requestAnimationFrame(frame);
+}
+function setPlaying(v, finished) {
+  playing = v;
+  $('#playBtn').textContent = v ? '일시정지' : (finished || (S && S.done) ? '다시 재생' : '재생');
+}
+$('#playBtn').addEventListener('click', () => {
+  if (S.done && !playing) { reset(scnKey); return; }
+  setPlaying(!playing);
+});
+$('#restartBtn').addEventListener('click', () => reset(scnKey));
+document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => reset(b.dataset.scn)));
+document.querySelectorAll('.spd').forEach(b => b.addEventListener('click', () => {
+  speed = Number(b.dataset.spd);
+  document.querySelectorAll('.spd').forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+}));
+document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => {
+  reset(b.dataset.go);
+  $('#stage').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+}));
+
+reset('one');
+if (reduce) setPlaying(false);
+requestAnimationFrame(frame);
+})();
+</script>
+
+</body></html>

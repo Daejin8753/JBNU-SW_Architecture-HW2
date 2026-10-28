@@ -47,3 +47,4 @@ python auction_eda.py
 | `prompt.md` | 사용한 프롬프트 |
 | `build_report.py` | 보고서 HTML·캡처·PDF 생성 (`python build_report.py`, Windows Edge 필요) |
 | `report.html`, `capture/` | 보고서 원본과 실행 화면 캡처 |
+| `소개-애니메이션.html` | 구조와 이벤트 흐름을 애니메이션으로 보여 주는 소개 페이지 (내려받아 브라우저로 열기) |
